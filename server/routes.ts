@@ -1,7 +1,31 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
+import multer from "multer";
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./replitAuth";
+import { FileProcessor } from "./fileProcessor";
+import { OpenAIService } from "./openaiService";
+
+// Configure multer for file uploads
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5MB limit
+  },
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = [
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    ];
+    
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Invalid file type. Only PDF, DOC, and DOCX files are allowed.'));
+    }
+  },
+});
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Auth middleware
@@ -19,27 +43,116 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Multer error handling middleware for consistent JSON responses
+  const handleMulterError = (error: any, req: any, res: any, next: any) => {
+    if (error instanceof multer.MulterError) {
+      switch (error.code) {
+        case 'LIMIT_FILE_SIZE':
+          return res.status(400).json({ 
+            message: 'File size exceeds 5MB limit',
+            error: 'FILE_TOO_LARGE'
+          });
+        case 'LIMIT_UNEXPECTED_FILE':
+          return res.status(400).json({ 
+            message: 'Unexpected file field',
+            error: 'INVALID_FIELD'
+          });
+        default:
+          return res.status(400).json({ 
+            message: error.message || 'File upload error',
+            error: 'UPLOAD_ERROR'
+          });
+      }
+    }
+    
+    // Handle custom file filter errors
+    if (error && error.message && error.message.includes('Invalid file type')) {
+      return res.status(400).json({ 
+        message: 'Invalid file type. Only PDF, DOC, and DOCX files are allowed.',
+        error: 'INVALID_FILE_TYPE'
+      });
+    }
+    
+    next(error);
+  };
+
   // CV routes
-  app.post('/api/cv/upload', isAuthenticated, async (req: any, res) => {
+  app.post('/api/cv/upload', isAuthenticated, upload.single('cv'), handleMulterError, async (req: any, res: any) => {
     try {
       const userId = req.user.claims.sub;
-      const { fileName, content } = req.body;
+      const file = req.file;
+
+      if (!file) {
+        return res.status(400).json({ message: 'No file uploaded' });
+      }
+
+      // Extract text from the uploaded file
+      const processedFile = await FileProcessor.extractText(file);
+
+      // Parse CV content with OpenAI or fallback
+      let parsedData;
+      let processingMethod = 'fallback';
       
-      // For now, create a basic CV record
-      // TODO: Implement AI parsing with OpenAI
+      if (OpenAIService.isAvailable()) {
+        try {
+          parsedData = await OpenAIService.parseCVContent(processedFile.text);
+          processingMethod = 'openai';
+        } catch (aiError) {
+          console.warn('OpenAI parsing failed, using fallback:', aiError);
+          parsedData = OpenAIService.parseCVContentFallback(processedFile.text);
+        }
+      } else {
+        console.log('OpenAI not available, using fallback parsing');
+        parsedData = OpenAIService.parseCVContentFallback(processedFile.text);
+      }
+
+      // Create CV record in database
       const cv = await storage.createCv({
         userId,
-        fileName,
-        originalContent: content,
-        skills: [], // Will be populated by AI
-        experience: '', // Will be populated by AI
-        education: '', // Will be populated by AI
+        fileName: processedFile.fileName,
+        originalContent: processedFile.text,
+        parsedData: {
+          ...parsedData,
+          processingMethod,
+          fileSize: processedFile.fileSize,
+          fileType: processedFile.fileType,
+          processedAt: new Date().toISOString()
+        },
+        skills: parsedData.skills,
+        experience: parsedData.experience,
+        education: parsedData.education,
       });
 
-      res.json(cv);
+      // Return success response with parsed data
+      res.json({
+        success: true,
+        cv,
+        parsedData,
+        processingMethod,
+        message: processingMethod === 'openai' 
+          ? 'CV processed successfully with AI analysis' 
+          : 'CV processed with basic parsing (OpenAI unavailable)'
+      });
     } catch (error) {
       console.error("Error uploading CV:", error);
-      res.status(500).json({ message: "Failed to upload CV" });
+      
+      // Handle specific error types
+      if (error instanceof Error) {
+        if (error.message.includes('file type') || error.message.includes('file size')) {
+          return res.status(400).json({ message: error.message });
+        }
+        if (error.message.includes('OpenAI API')) {
+          return res.status(503).json({ 
+            message: 'AI processing temporarily unavailable. Please try again later.',
+            details: error.message
+          });
+        }
+      }
+      
+      res.status(500).json({ 
+        message: "Failed to upload and process CV",
+        details: error instanceof Error ? error.message : 'Unknown error'
+      });
     }
   });
 
