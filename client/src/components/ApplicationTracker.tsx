@@ -1,8 +1,10 @@
+import { useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
-import { Building2, Calendar, ExternalLink, Mail, MailOpen } from 'lucide-react'
+import { ApplicationPreparationModal } from '@/components/ApplicationPreparationModal'
+import { Building2, Calendar, ExternalLink, Mail, MailOpen, Zap } from 'lucide-react'
 
 interface Application {
   id: string
@@ -14,6 +16,19 @@ interface Application {
   emailOpened: boolean
   interviewDate?: string
   notes?: string
+  preparationStatus?: 'pending' | 'preparing' | 'ready' | 'failed'
+  coverLetter?: string
+  tailoredCv?: string
+  preparationMetadata?: any
+  jobId: string
+  userId: string
+  job: {
+    id: string
+    title: string
+    company: string
+    description: string
+    requirements: string[]
+  }
 }
 
 interface ApplicationTrackerProps {
@@ -22,6 +37,8 @@ interface ApplicationTrackerProps {
 }
 
 export function ApplicationTracker({ applications, onViewDetails }: ApplicationTrackerProps) {
+  const [selectedApplication, setSelectedApplication] = useState<Application | null>(null)
+  const [isPreparationModalOpen, setIsPreparationModalOpen] = useState(false)
   const getStatusColor = (status: Application['status']) => {
     const colors = {
       applied: 'bg-blue-500',
@@ -47,6 +64,26 @@ export function ApplicationTracker({ applications, onViewDetails }: ApplicationT
   const handleViewDetails = (applicationId: string) => {
     console.log(`Viewing details for application: ${applicationId}`)
     onViewDetails?.(applicationId)
+  }
+
+  const handlePrepareApplication = (app: Application) => {
+    setSelectedApplication(app)
+    setIsPreparationModalOpen(true)
+  }
+
+  const getPreparationStatusBadge = (status?: 'pending' | 'preparing' | 'ready' | 'failed') => {
+    if (!status || status === 'pending') return null
+    
+    switch (status) {
+      case 'ready':
+        return <Badge variant="secondary" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200 ml-2">Ready</Badge>
+      case 'preparing':
+        return <Badge variant="secondary" className="bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 ml-2">Preparing</Badge>
+      case 'failed':
+        return <Badge variant="destructive" className="ml-2">Failed</Badge>
+      default:
+        return null
+    }
   }
 
   const stats = {
@@ -117,12 +154,15 @@ export function ApplicationTracker({ applications, onViewDetails }: ApplicationT
                   </div>
                 </div>
                 <div className="text-right space-y-2">
-                  <Badge 
-                    className={`text-white ${getStatusColor(app.status)}`}
-                    data-testid={`application-status-${app.id}`}
-                  >
-                    {getStatusText(app.status)}
-                  </Badge>
+                  <div className="flex items-center justify-end gap-2">
+                    <Badge 
+                      className={`text-white ${getStatusColor(app.status)}`}
+                      data-testid={`application-status-${app.id}`}
+                    >
+                      {getStatusText(app.status)}
+                    </Badge>
+                    {getPreparationStatusBadge(app.preparationStatus)}
+                  </div>
                   <div className="text-sm text-muted-foreground">
                     Match: <span className="font-medium" data-testid={`application-match-${app.id}`}>{app.matchScore}%</span>
                   </div>
@@ -158,7 +198,7 @@ export function ApplicationTracker({ applications, onViewDetails }: ApplicationT
               )}
 
               {/* Actions */}
-              <div className="flex gap-2">
+              <div className="flex gap-2 flex-wrap">
                 <Button
                   variant="outline"
                   size="sm"
@@ -168,6 +208,18 @@ export function ApplicationTracker({ applications, onViewDetails }: ApplicationT
                 >
                   <ExternalLink className="h-3 w-3" />
                   View Details
+                </Button>
+                <Button
+                  variant={app.preparationStatus === 'ready' ? "secondary" : "default"}
+                  size="sm"
+                  onClick={() => handlePrepareApplication(app)}
+                  className="flex items-center gap-2"
+                  data-testid={`button-prepare-application-${app.id}`}
+                >
+                  <Zap className="h-3 w-3" />
+                  {app.preparationStatus === 'ready' ? 'View Preparation' : 
+                   app.preparationStatus === 'preparing' ? 'Preparing...' : 
+                   'Prepare Application'}
                 </Button>
                 {app.status === 'interviewing' && (
                   <Button
@@ -182,6 +234,15 @@ export function ApplicationTracker({ applications, onViewDetails }: ApplicationT
           </Card>
         ))}
       </div>
+
+      {/* Application Preparation Modal */}
+      {selectedApplication && (
+        <ApplicationPreparationModal
+          application={selectedApplication}
+          isOpen={isPreparationModalOpen}
+          onOpenChange={setIsPreparationModalOpen}
+        />
+      )}
     </div>
   )
 }

@@ -6,6 +6,7 @@ import { setupAuth, isAuthenticated } from "./replitAuth";
 import { FileProcessor } from "./fileProcessor";
 import { OpenAIService } from "./openaiService";
 import { JobMatchingService } from "./jobMatchingService";
+import { ApplicationPreparationService } from "./applicationPreparationService";
 
 // Configure multer for file uploads
 const upload = multer({
@@ -406,6 +407,288 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error updating application:", error);
       res.status(500).json({ message: "Failed to update application" });
+    }
+  });
+
+  // Application preparation routes
+  app.post('/api/applications/:id/prepare', isAuthenticated, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const userId = req.user.claims.sub;
+      
+      // Get application with job details
+      const applicationWithJob = await storage.getApplicationWithJob(id);
+      if (!applicationWithJob || applicationWithJob.userId !== userId) {
+        return res.status(404).json({ message: "Application not found" });
+      }
+
+      // Check if already prepared
+      if (applicationWithJob.preparationStatus === 'ready') {
+        return res.json({
+          coverLetter: applicationWithJob.coverLetter,
+          tailoredCv: applicationWithJob.tailoredCv,
+          preparationMetadata: applicationWithJob.preparationMetadata,
+          status: 'ready'
+        });
+      }
+
+      // Update status to preparing
+      await storage.updateApplication(id, {
+        preparationStatus: 'preparing'
+      });
+
+      // Prepare the application
+      const result = await ApplicationPreparationService.prepareApplication({
+        userId,
+        jobId: applicationWithJob.jobId,
+        cvId: applicationWithJob.id // Using application id as reference
+      });
+
+      if (result.success) {
+        // Update application with generated content
+        const updatedApplication = await storage.updateApplication(id, {
+          coverLetter: result.coverLetter.content,
+          tailoredCv: result.tailoredCv.content,
+          preparationStatus: 'ready',
+          preparationMetadata: {
+            coverLetter: result.coverLetter.metadata,
+            tailoredCv: result.tailoredCv.metadata,
+            preparedAt: new Date().toISOString()
+          }
+        });
+
+        res.json({
+          coverLetter: result.coverLetter.content,
+          tailoredCv: result.tailoredCv.content,
+          preparationMetadata: updatedApplication.preparationMetadata,
+          status: 'ready'
+        });
+      } else {
+        await storage.updateApplication(id, {
+          preparationStatus: 'failed',
+          preparationMetadata: {
+            error: result.error,
+            failedAt: new Date().toISOString()
+          }
+        });
+
+        res.status(500).json({
+          message: "Failed to prepare application",
+          error: result.error
+        });
+      }
+    } catch (error) {
+      console.error("Error preparing application:", error);
+      res.status(500).json({ message: "Failed to prepare application" });
+    }
+  });
+
+  // Generate cover letter only
+  app.post('/api/cover-letter/generate', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { jobId } = req.body;
+
+      const [user, cv, job] = await Promise.all([
+        storage.getUser(userId),
+        storage.getCvByUserId(userId),
+        storage.getJobById(jobId)
+      ]);
+
+      if (!user || !cv || !job) {
+        return res.status(400).json({ 
+          message: "Missing required data (user, CV, or job)" 
+        });
+      }
+
+      const coverLetter = await ApplicationPreparationService.generateCoverLetter(cv, job, user);
+      res.json(coverLetter);
+    } catch (error) {
+      console.error("Error generating cover letter:", error);
+      res.status(500).json({ message: "Failed to generate cover letter" });
+    }
+  });
+
+  // Tailor CV for specific job
+  app.post('/api/cv/tailor', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { jobId } = req.body;
+
+      const [user, cv, job] = await Promise.all([
+        storage.getUser(userId),
+        storage.getCvByUserId(userId),
+        storage.getJobById(jobId)
+      ]);
+
+      if (!user || !cv || !job) {
+        return res.status(400).json({ 
+          message: "Missing required data (user, CV, or job)" 
+        });
+      }
+
+      const tailoredCv = await ApplicationPreparationService.tailorCv(cv, job, user);
+      res.json(tailoredCv);
+    } catch (error) {
+      console.error("Error tailoring CV:", error);
+      res.status(500).json({ message: "Failed to tailor CV" });
+    }
+  });
+
+  // Get API usage statistics
+  app.get('/api/usage/stats', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const user = await storage.getUser(userId);
+      
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      // Get today's usage
+      const today = new Date();
+      const todayUsage = await storage.getDailyApiUsage(userId, today);
+      
+      // Get recent usage history
+      const recentUsage = await storage.getApiUsageByUserId(userId, 30);
+      
+      // Calculate usage by endpoint
+      const usageByEndpoint = recentUsage.reduce((acc, usage) => {
+        acc[usage.endpoint] = (acc[usage.endpoint] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>);
+
+      const stats = {
+        creditsRemaining: user.creditsRemaining,
+        apiCallsToday: user.apiCallsToday,
+        maxDailyApiCalls: ApplicationPreparationService['MAX_DAILY_API_CALLS'],
+        canMakeApiCall: await ApplicationPreparationService.canMakeApiCall(userId),
+        usageByEndpoint,
+        recentUsage: recentUsage.slice(0, 10), // Last 10 calls
+        totalTokensUsed: recentUsage.reduce((sum, usage) => sum + (usage.tokensUsed || 0), 0)
+      };
+
+      res.json(stats);
+    } catch (error) {
+      console.error("Error fetching usage stats:", error);
+      res.status(500).json({ message: "Failed to fetch usage statistics" });
+    }
+  });
+
+  // Get templates
+  app.get('/api/templates', isAuthenticated, async (req: any, res) => {
+    try {
+      const { type } = req.query;
+      const templates = await storage.getTemplates(type as string);
+      res.json(templates);
+    } catch (error) {
+      console.error("Error fetching templates:", error);
+      res.status(500).json({ message: "Failed to fetch templates" });
+    }
+  });
+
+  // Batch prepare multiple applications
+  app.post('/api/applications/batch-prepare', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { applicationIds } = req.body;
+
+      if (!Array.isArray(applicationIds) || applicationIds.length === 0) {
+        return res.status(400).json({ message: "applicationIds must be a non-empty array" });
+      }
+
+      if (applicationIds.length > 5) {
+        return res.status(400).json({ message: "Maximum 5 applications can be prepared in batch" });
+      }
+
+      // Check if user can make API calls
+      if (!(await ApplicationPreparationService.canMakeApiCall(userId))) {
+        return res.status(429).json({ 
+          message: "Daily API limit reached or no credits remaining" 
+        });
+      }
+
+      const results = [];
+      
+      // Process applications sequentially to avoid overwhelming the API
+      for (const applicationId of applicationIds) {
+        try {
+          const applicationWithJob = await storage.getApplicationWithJob(applicationId);
+          
+          if (!applicationWithJob || applicationWithJob.userId !== userId) {
+            results.push({
+              applicationId,
+              success: false,
+              error: "Application not found or access denied"
+            });
+            continue;
+          }
+
+          if (applicationWithJob.preparationStatus === 'ready') {
+            results.push({
+              applicationId,
+              success: true,
+              status: 'already_ready',
+              coverLetter: applicationWithJob.coverLetter,
+              tailoredCv: applicationWithJob.tailoredCv
+            });
+            continue;
+          }
+
+          const result = await ApplicationPreparationService.prepareApplication({
+            userId,
+            jobId: applicationWithJob.jobId,
+            cvId: applicationId
+          });
+
+          if (result.success) {
+            await storage.updateApplication(applicationId, {
+              coverLetter: result.coverLetter.content,
+              tailoredCv: result.tailoredCv.content,
+              preparationStatus: 'ready',
+              preparationMetadata: {
+                coverLetter: result.coverLetter.metadata,
+                tailoredCv: result.tailoredCv.metadata,
+                preparedAt: new Date().toISOString()
+              }
+            });
+
+            results.push({
+              applicationId,
+              success: true,
+              status: 'prepared',
+              coverLetter: result.coverLetter.content,
+              tailoredCv: result.tailoredCv.content
+            });
+          } else {
+            await storage.updateApplication(applicationId, {
+              preparationStatus: 'failed'
+            });
+
+            results.push({
+              applicationId,
+              success: false,
+              error: result.error
+            });
+          }
+        } catch (error) {
+          results.push({
+            applicationId,
+            success: false,
+            error: error instanceof Error ? error.message : 'Unknown error'
+          });
+        }
+      }
+
+      res.json({
+        success: true,
+        results,
+        totalProcessed: results.length,
+        successCount: results.filter(r => r.success).length
+      });
+    } catch (error) {
+      console.error("Error batch preparing applications:", error);
+      res.status(500).json({ message: "Failed to batch prepare applications" });
     }
   });
 

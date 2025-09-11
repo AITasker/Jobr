@@ -35,6 +35,8 @@ export const users = pgTable("users", {
   profileImageUrl: varchar("profile_image_url"),
   plan: varchar("plan").default("Explorer").notNull(),
   creditsRemaining: integer("credits_remaining").default(3).notNull(),
+  apiCallsToday: integer("api_calls_today").default(0).notNull(),
+  lastApiCallReset: timestamp("last_api_call_reset").defaultNow(),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -77,6 +79,8 @@ export const applications = pgTable("applications", {
   matchScore: integer("match_score").notNull(),
   tailoredCv: text("tailored_cv"),
   coverLetter: text("cover_letter"),
+  preparationStatus: varchar("preparation_status").default("pending").notNull(), // pending, preparing, ready, failed
+  preparationMetadata: jsonb("preparation_metadata"), // AI generation details, fallback used, etc.
   emailOpened: boolean("email_opened").default(false),
   appliedDate: timestamp("applied_date").defaultNow(),
   interviewDate: timestamp("interview_date"),
@@ -87,10 +91,34 @@ export const applications = pgTable("applications", {
   uniqueUserJob: unique("unique_user_job").on(table.userId, table.jobId),
 }));
 
+// API usage tracking table for detailed analytics
+export const apiUsage = pgTable("api_usage", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  endpoint: varchar("endpoint").notNull(), // cover_letter, cv_tailor, etc.
+  tokensUsed: integer("tokens_used").default(0),
+  success: boolean("success").default(true),
+  errorMessage: text("error_message"),
+  responseTime: integer("response_time_ms"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Application preparation templates for fallback
+export const templates = pgTable("templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  type: varchar("type").notNull(), // cover_letter, cv_summary
+  name: varchar("name").notNull(),
+  template: text("template").notNull(),
+  variables: text("variables").array(), // ["name", "company", "position"]
+  isDefault: boolean("is_default").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // Relations
 export const usersRelations = relations(users, ({ many }) => ({
   cvs: many(cvs),
   applications: many(applications),
+  apiUsage: many(apiUsage),
 }));
 
 export const cvsRelations = relations(cvs, ({ one }) => ({
@@ -115,11 +143,20 @@ export const applicationsRelations = relations(applications, ({ one }) => ({
   }),
 }));
 
+export const apiUsageRelations = relations(apiUsage, ({ one }) => ({
+  user: one(users, {
+    fields: [apiUsage.userId],
+    references: [users.id],
+  }),
+}));
+
 // Zod schemas for validation
 export const insertUserSchema = createInsertSchema(users);
 export const insertCvSchema = createInsertSchema(cvs).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertJobSchema = createInsertSchema(jobs).omit({ id: true, createdAt: true });
 export const insertApplicationSchema = createInsertSchema(applications).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertApiUsageSchema = createInsertSchema(apiUsage).omit({ id: true, createdAt: true });
+export const insertTemplateSchema = createInsertSchema(templates).omit({ id: true, createdAt: true });
 
 // Types
 export type UpsertUser = typeof users.$inferInsert;
@@ -130,3 +167,7 @@ export type InsertJob = z.infer<typeof insertJobSchema>;
 export type Job = typeof jobs.$inferSelect;
 export type InsertApplication = z.infer<typeof insertApplicationSchema>;
 export type Application = typeof applications.$inferSelect;
+export type InsertApiUsage = z.infer<typeof insertApiUsageSchema>;
+export type ApiUsage = typeof apiUsage.$inferSelect;
+export type InsertTemplate = z.infer<typeof insertTemplateSchema>;
+export type Template = typeof templates.$inferSelect;
