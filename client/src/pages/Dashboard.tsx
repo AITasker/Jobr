@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Header } from '@/components/Header'
+import { useAuth } from '@/hooks/useAuth'
 import { CVUpload } from '@/components/CVUpload'
 import { JobCard } from '@/components/JobCard'
 import { ApplicationTracker } from '@/components/ApplicationTracker'
@@ -10,12 +11,7 @@ import { Button } from '@/components/ui/button'
 import { Search, Filter, Briefcase, Target, FileText } from 'lucide-react'
 
 export default function Dashboard() {
-  // todo: remove mock functionality
-  const [user] = useState({
-    name: 'Sarah Johnson',
-    email: 'sarah@example.com',
-    plan: 'Applicant' as const
-  })
+  const { user } = useAuth()
 
   const [cvUploaded, setCvUploaded] = useState(true) // Mock CV uploaded state
 
@@ -98,7 +94,7 @@ export default function Dashboard() {
   if (!cvUploaded) {
     return (
       <div className="min-h-screen bg-background">
-        <Header user={user} />
+        <Header />
         <main className="container mx-auto px-4 py-8">
           <div className="max-w-2xl mx-auto">
             <div className="text-center mb-8">
@@ -116,7 +112,7 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-screen bg-background">
-      <Header user={user} />
+      <Header />
       
       <main className="container mx-auto px-4 py-6">
         {/* Dashboard Header */}
