@@ -5,6 +5,7 @@ import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./replitAuth";
 import { FileProcessor } from "./fileProcessor";
 import { OpenAIService } from "./openaiService";
+import { JobMatchingService } from "./jobMatchingService";
 
 // Configure multer for file uploads
 const upload = multer({
@@ -189,6 +190,176 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching job:", error);
       res.status(500).json({ message: "Failed to fetch job" });
+    }
+  });
+
+  // Job matching routes
+  app.get('/api/jobs/matched', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const cv = await storage.getCvByUserId(userId);
+      
+      if (!cv || !cv.parsedData) {
+        return res.status(400).json({ 
+          message: "Please upload and process your CV before viewing matched jobs",
+          code: "CV_REQUIRED"
+        });
+      }
+
+      const limit = req.query.limit ? parseInt(req.query.limit as string) : 20;
+      const allJobs = await storage.getJobs(100); // Get more jobs for matching
+      
+      // Get user preferences from query parameters
+      const preferences = {
+        preferredLocation: req.query.location as string,
+        salaryExpectation: req.query.salary as string,
+        preferredJobTypes: req.query.types ? (req.query.types as string).split(',') : undefined
+      };
+
+      const matchedJobs = await JobMatchingService.getTopMatches(cv, allJobs, limit, preferences);
+      
+      res.json({
+        matches: matchedJobs,
+        total: matchedJobs.length,
+        processingMethod: JobMatchingService.isAvailable() ? 'ai' : 'basic'
+      });
+    } catch (error) {
+      console.error("Error fetching matched jobs:", error);
+      res.status(500).json({ 
+        message: "Failed to fetch matched jobs",
+        details: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
+
+  app.get('/api/jobs/search', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const cv = await storage.getCvByUserId(userId);
+      
+      if (!cv || !cv.parsedData) {
+        return res.status(400).json({ 
+          message: "Please upload and process your CV before searching jobs",
+          code: "CV_REQUIRED"
+        });
+      }
+
+      const allJobs = await storage.getJobs(200); // Get more jobs for searching
+      
+      // Parse search filters from query parameters
+      const filters = {
+        query: req.query.q as string,
+        location: req.query.location as string,
+        type: req.query.type as string,
+        minSalary: req.query.minSalary ? parseInt(req.query.minSalary as string) : undefined,
+        skills: req.query.skills ? (req.query.skills as string).split(',') : undefined
+      };
+
+      const preferences = {
+        preferredLocation: req.query.preferredLocation as string,
+        salaryExpectation: req.query.salaryExpectation as string,
+        preferredJobTypes: req.query.preferredTypes ? (req.query.preferredTypes as string).split(',') : undefined
+      };
+
+      const searchResults = await JobMatchingService.searchJobs(cv, allJobs, filters, preferences);
+      
+      res.json({
+        results: searchResults,
+        total: searchResults.length,
+        filters,
+        processingMethod: JobMatchingService.isAvailable() ? 'ai' : 'basic'
+      });
+    } catch (error) {
+      console.error("Error searching jobs:", error);
+      res.status(500).json({ 
+        message: "Failed to search jobs",
+        details: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
+
+  app.post('/api/jobs/:id/apply', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const jobId = req.params.id;
+      const cv = await storage.getCvByUserId(userId);
+      
+      if (!cv) {
+        return res.status(400).json({ 
+          message: "Please upload your CV before applying to jobs",
+          code: "CV_REQUIRED"
+        });
+      }
+
+      // Check if job exists
+      const job = await storage.getJobById(jobId);
+      if (!job) {
+        return res.status(404).json({ message: "Job not found" });
+      }
+
+      // Check for existing application (duplicate prevention)
+      const existingApplication = await storage.checkExistingApplication(userId, jobId);
+      if (existingApplication) {
+        return res.status(400).json({ 
+          message: "You have already applied to this job",
+          code: "DUPLICATE_APPLICATION",
+          existingApplication: {
+            id: existingApplication.id,
+            status: existingApplication.status,
+            appliedDate: existingApplication.appliedDate
+          }
+        });
+      }
+
+      // Calculate match score if not provided
+      let matchScore = req.body.matchScore;
+      if (!matchScore && cv.parsedData) {
+        try {
+          const matches = await JobMatchingService.findMatchedJobs(cv, [job]);
+          matchScore = matches.length > 0 ? matches[0].matchScore : 50;
+        } catch (error) {
+          console.warn('Failed to calculate match score:', error);
+          matchScore = 50; // Default score
+        }
+      }
+
+      // Create application record
+      const application = await storage.createApplication({
+        userId,
+        jobId,
+        matchScore: matchScore || 50,
+        status: 'applied',
+        emailOpened: false,
+        notes: req.body.notes || ''
+      });
+
+      // Return application with job details
+      const applicationWithJob = await storage.getApplicationWithJob(application.id);
+      
+      res.json({
+        success: true,
+        application: applicationWithJob,
+        message: `Successfully applied to ${job.title} at ${job.company}`
+      });
+    } catch (error) {
+      console.error("Error applying to job:", error);
+      
+      // Handle database constraint violations (backup protection)
+      if (error instanceof Error && (
+        error.message.includes('duplicate') || 
+        error.message.includes('unique') ||
+        error.message.includes('constraint')
+      )) {
+        return res.status(400).json({ 
+          message: "You have already applied to this job",
+          code: "DUPLICATE_APPLICATION"
+        });
+      }
+      
+      res.status(500).json({ 
+        message: "Failed to apply to job",
+        details: error instanceof Error ? error.message : 'Unknown error'
+      });
     }
   });
 

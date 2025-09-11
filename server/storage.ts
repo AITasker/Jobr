@@ -35,6 +35,7 @@ export interface IStorage {
   getApplicationsByUserId(userId: string): Promise<Application[]>;
   updateApplication(id: string, updates: Partial<Application>): Promise<Application>;
   getApplicationWithJob(id: string): Promise<(Application & { job: Job }) | undefined>;
+  checkExistingApplication(userId: string, jobId: string): Promise<Application | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -126,6 +127,14 @@ export class DatabaseStorage implements IStorage {
       ...result.applications,
       job: result.jobs
     };
+  }
+
+  async checkExistingApplication(userId: string, jobId: string): Promise<Application | undefined> {
+    const [application] = await db
+      .select()
+      .from(applications)
+      .where(and(eq(applications.userId, userId), eq(applications.jobId, jobId)));
+    return application;
   }
 }
 

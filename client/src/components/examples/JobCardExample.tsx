@@ -33,7 +33,31 @@ export default function JobCardExample() {
     <ThemeProvider>
       <div className="grid gap-6 md:grid-cols-2 p-6">
         {mockJobs.map((job) => (
-          <JobCard key={job.id} job={job} />
+          <JobCard key={job.id} jobMatch={{
+            job,
+            matchScore: job.matchScore,
+            explanation: `${job.matchScore}% match based on your profile`,
+            skillsMatch: {
+              matched: job.requirements?.slice(0, 3) || [],
+              missing: [],
+              score: job.matchScore
+            },
+            experienceMatch: {
+              suitable: job.matchScore >= 75,
+              explanation: 'Experience level appears suitable',
+              score: job.matchScore
+            },
+            locationMatch: {
+              suitable: true,
+              explanation: 'Location matches your preferences',
+              score: 85
+            },
+            salaryMatch: {
+              suitable: true,
+              explanation: 'Salary range within expectations',
+              score: 80
+            }
+          }} />
         ))}
       </div>
     </ThemeProvider>

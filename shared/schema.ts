@@ -9,7 +9,8 @@ import {
   text,
   integer,
   decimal,
-  boolean
+  boolean,
+  unique
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -82,7 +83,9 @@ export const applications = pgTable("applications", {
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (table) => ({
+  uniqueUserJob: unique("unique_user_job").on(table.userId, table.jobId),
+}));
 
 // Relations
 export const usersRelations = relations(users, ({ many }) => ({

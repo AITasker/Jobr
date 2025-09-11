@@ -8,12 +8,51 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Search, Filter, Briefcase, Target, FileText } from 'lucide-react'
+import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { useQuery, useMutation } from '@tanstack/react-query'
+import { apiRequest, queryClient } from '@/lib/queryClient'
+import { useToast } from '@/hooks/use-toast'
+import { Search, Filter, Briefcase, Target, FileText, Loader2, AlertCircle } from 'lucide-react'
 
 export default function Dashboard() {
-  const { user } = useAuth()
+  const { user, isAuthenticated } = useAuth()
+  const { toast } = useToast()
+  
+  // Search and filter state
+  const [searchQuery, setSearchQuery] = useState('')
+  const [locationFilter, setLocationFilter] = useState('')
+  const [typeFilter, setTypeFilter] = useState('')
+  const [activeTab, setActiveTab] = useState('matched')
+  const [cvUploaded, setCvUploaded] = useState(false)
 
-  const [cvUploaded, setCvUploaded] = useState(true) // Mock CV uploaded state
+  // Check if user has a CV uploaded
+  const { data: cvData, isLoading: cvLoading } = useQuery({
+    queryKey: ['/api/cv'],
+    enabled: isAuthenticated,
+    retry: false
+  })
+
+  // Get matched jobs
+  const { data: matchedJobsData, isLoading: matchedJobsLoading, error: matchedJobsError } = useQuery({
+    queryKey: ['/api/jobs/matched', { limit: 20 }],
+    enabled: isAuthenticated && !!cvData,
+    retry: false
+  })
+
+  // Get all applications
+  const { data: applications, isLoading: applicationsLoading } = useQuery({
+    queryKey: ['/api/applications'],
+    enabled: isAuthenticated,
+    retry: false
+  })
+
+  // Search jobs with filters
+  const { data: searchResults, isLoading: searchLoading, refetch: refetchSearch } = useQuery({
+    queryKey: ['/api/jobs/search', { q: searchQuery, location: locationFilter, type: typeFilter }],
+    enabled: Boolean(isAuthenticated && !!cvData && activeTab === 'search' && (searchQuery || locationFilter || typeFilter)),
+    retry: false
+  })
 
   const mockJobs = [
     {
@@ -119,7 +158,7 @@ export default function Dashboard() {
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-foreground mb-2">Dashboard</h1>
           <p className="text-muted-foreground">
-            Welcome back, {user.name}! Here's your job search overview.
+            Welcome back, {(user as any)?.name || 'User'}! Here's your job search overview.
           </p>
         </div>
 
@@ -187,9 +226,37 @@ export default function Dashboard() {
               </CardHeader>
               <CardContent>
                 <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-                  {mockJobs.map((job) => (
-                    <JobCard key={job.id} job={job} />
-                  ))}
+                  {mockJobs.map((job) => {
+                    // Convert job to jobMatch format for JobCard component
+                    const jobMatch = {
+                      job,
+                      matchScore: job.matchScore,
+                      explanation: `${job.matchScore}% match based on your profile`,
+                      skillsMatch: {
+                        matched: job.requirements?.slice(0, 3) || [],
+                        missing: [],
+                        score: job.matchScore
+                      },
+                      experienceMatch: {
+                        suitable: job.matchScore >= 75,
+                        explanation: 'Experience level appears suitable',
+                        score: job.matchScore
+                      },
+                      locationMatch: {
+                        suitable: true,
+                        explanation: 'Location matches your preferences',
+                        score: 85
+                      },
+                      salaryMatch: {
+                        suitable: true,
+                        explanation: 'Salary range within expectations',
+                        score: 80
+                      }
+                    }
+                    return (
+                      <JobCard key={job.id} jobMatch={jobMatch} />
+                    )
+                  })}
                 </div>
               </CardContent>
             </Card>
