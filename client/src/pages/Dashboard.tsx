@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useLocation } from 'wouter'
 import { Header } from '@/components/Header'
 import { useAuth } from '@/hooks/useAuth'
 import { CVUpload } from '@/components/CVUpload'
@@ -16,8 +17,24 @@ import { useToast } from '@/hooks/use-toast'
 import { Search, Filter, Briefcase, Target, FileText, Loader2, AlertCircle } from 'lucide-react'
 
 export default function Dashboard() {
-  const { user, isAuthenticated } = useAuth()
+  const { user, isAuthenticated, isLoading } = useAuth()
   const { toast } = useToast()
+  const [, setLocation] = useLocation()
+
+  // Show loading spinner while checking authentication
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
+
+  // Redirect to landing page if not authenticated
+  if (!isAuthenticated) {
+    setLocation('/');
+    return null;
+  }
   
   // Search and filter state
   const [searchQuery, setSearchQuery] = useState('')
