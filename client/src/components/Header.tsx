@@ -1,23 +1,30 @@
 import { Button } from '@/components/ui/button'
 import { ThemeToggle } from '@/components/ThemeToggle'
+import { useAuth } from '@/hooks/useAuth'
 import { Briefcase, User, Bell } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 
 interface HeaderProps {
-  user?: {
-    name: string
-    email: string
-    plan: 'Explorer' | 'Applicant' | 'Strategist'
-  }
+  showAuth?: boolean
 }
 
-export function Header({ user }: HeaderProps) {
+export function Header({ showAuth = true }: HeaderProps) {
+  const { user, isAuthenticated } = useAuth()
+  
+  // Type guard for user object
+  const typedUser = user as {
+    plan?: string
+    firstName?: string
+    lastName?: string
+    email?: string
+  } | undefined
+  
   const handleLogin = () => {
-    console.log('Login clicked')
+    window.location.href = '/api/login'
   }
 
-  const handleSignup = () => {
-    console.log('Sign up clicked')
+  const handleLogout = () => {
+    window.location.href = '/api/logout'
   }
 
   const handleProfileClick = () => {
@@ -49,42 +56,56 @@ export function Header({ user }: HeaderProps) {
 
           {/* User Actions */}
           <div className="flex items-center gap-3">
-            {user ? (
+            {showAuth && (
               <>
-                <Button variant="ghost" size="icon" data-testid="button-notifications">
-                  <Bell className="h-4 w-4" />
-                </Button>
-                <div className="flex items-center gap-2">
-                  <Badge variant="secondary" data-testid="badge-user-plan">{user.plan}</Badge>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={handleProfileClick}
-                    className="flex items-center gap-2"
-                    data-testid="button-profile"
-                  >
-                    <User className="h-4 w-4" />
-                    <span className="hidden sm:inline">{user.name}</span>
-                  </Button>
-                </div>
-              </>
-            ) : (
-              <>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleLogin}
-                  data-testid="button-login"
-                >
-                  Login
-                </Button>
-                <Button
-                  size="sm"
-                  onClick={handleSignup}
-                  data-testid="button-signup"
-                >
-                  Sign Up
-                </Button>
+                {isAuthenticated && user ? (
+                  <>
+                    <Button variant="ghost" size="icon" data-testid="button-notifications">
+                      <Bell className="h-4 w-4" />
+                    </Button>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="secondary" data-testid="badge-user-plan">{typedUser?.plan || 'Explorer'}</Badge>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={handleProfileClick}
+                        className="flex items-center gap-2"
+                        data-testid="button-profile"
+                      >
+                        <User className="h-4 w-4" />
+                        <span className="hidden sm:inline">
+                          {typedUser?.firstName || typedUser?.email?.split('@')[0] || 'User'}
+                        </span>
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={handleLogout}
+                        data-testid="button-logout"
+                      >
+                        Logout
+                      </Button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleLogin}
+                      data-testid="button-login"
+                    >
+                      Login
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={handleLogin}
+                      data-testid="button-signup"
+                    >
+                      Get Started
+                    </Button>
+                  </>
+                )}
               </>
             )}
             <ThemeToggle />
