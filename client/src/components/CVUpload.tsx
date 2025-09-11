@@ -3,56 +3,138 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
 import { Upload, FileText, CheckCircle, AlertCircle } from 'lucide-react'
+import { useToast } from '@/hooks/use-toast'
 
 interface CVUploadProps {
   onUploadComplete?: (cvData: any) => void
+}
+
+interface UploadResponse {
+  success: boolean
+  cv: any
+  parsedData: any
+  processingMethod: 'openai' | 'fallback'
+  message: string
 }
 
 export function CVUpload({ onUploadComplete }: CVUploadProps) {
   const [uploadStatus, setUploadStatus] = useState<'idle' | 'uploading' | 'processing' | 'completed' | 'error'>('idle')
   const [progress, setProgress] = useState(0)
   const [fileName, setFileName] = useState('')
+  const [errorMessage, setErrorMessage] = useState('')
+  const [processingMethod, setProcessingMethod] = useState<'openai' | 'fallback' | null>(null)
+  const { toast } = useToast()
 
-  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file) return
+
+    // Validate file before upload
+    const maxSize = 5 * 1024 * 1024 // 5MB
+    const allowedTypes = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']
+    
+    if (file.size > maxSize) {
+      setErrorMessage('File size exceeds 5MB limit')
+      setUploadStatus('error')
+      return
+    }
+
+    if (!allowedTypes.includes(file.type)) {
+      setErrorMessage('Please upload a PDF, DOC, or DOCX file')
+      setUploadStatus('error')
+      return
+    }
 
     setFileName(file.name)
     setUploadStatus('uploading')
     setProgress(0)
+    setErrorMessage('')
+    setProcessingMethod(null)
 
-    // Simulate upload progress
-    const uploadInterval = setInterval(() => {
-      setProgress((prev) => {
-        if (prev >= 100) {
-          clearInterval(uploadInterval)
-          setUploadStatus('processing')
-          
-          // Simulate AI processing
-          setTimeout(() => {
-            setUploadStatus('completed')
-            // todo: remove mock functionality
-            const mockCVData = {
-              name: 'Sarah Johnson',
-              email: 'sarah@example.com',
-              skills: ['React', 'TypeScript', 'Node.js', 'Python'],
-              experience: '5 years',
-              education: 'Computer Science, IIT Delhi'
-            }
-            onUploadComplete?.(mockCVData)
-          }, 2000)
-          
-          return 100
-        }
-        return prev + 10
+    try {
+      // Create FormData for file upload
+      const formData = new FormData()
+      formData.append('cv', file)
+
+      // Simulate upload progress
+      const progressInterval = setInterval(() => {
+        setProgress(prev => {
+          if (prev >= 90) {
+            clearInterval(progressInterval)
+            return 90
+          }
+          return prev + 10
+        })
+      }, 100)
+
+      // Upload file to backend
+      const response = await fetch('/api/cv/upload', {
+        method: 'POST',
+        body: formData,
+        credentials: 'include'
       })
-    }, 200)
+
+      clearInterval(progressInterval)
+      setProgress(100)
+      setUploadStatus('processing')
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.message || `Upload failed with status ${response.status}`)
+      }
+
+      const result: UploadResponse = await response.json()
+      
+      // Show completion after brief processing animation
+      setTimeout(() => {
+        setUploadStatus('completed')
+        setProcessingMethod(result.processingMethod)
+        
+        // Show appropriate toast message
+        if (result.processingMethod === 'openai') {
+          toast({
+            title: "CV Processed Successfully!",
+            description: "Your CV has been analyzed with AI and is ready for job matching.",
+          })
+        } else {
+          toast({
+            title: "CV Uploaded",
+            description: "Your CV has been processed with basic parsing. Full AI analysis is temporarily unavailable.",
+            variant: "default"
+          })
+        }
+        
+        // Call completion handler with parsed data
+        if (onUploadComplete && result.parsedData) {
+          onUploadComplete(result.parsedData)
+        }
+      }, 1500)
+      
+    } catch (error) {
+      console.error('Upload error:', error)
+      setUploadStatus('error')
+      setErrorMessage(error instanceof Error ? error.message : 'Upload failed unexpectedly')
+      
+      toast({
+        title: "Upload Failed",
+        description: error instanceof Error ? error.message : "Please try again",
+        variant: "destructive"
+      })
+    }
   }
 
   const handleReUpload = () => {
     setUploadStatus('idle')
     setProgress(0)
     setFileName('')
+    setErrorMessage('')
+    setProcessingMethod(null)
+    
+    // Reset file input
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement
+    if (fileInput) {
+      fileInput.value = ''
+    }
   }
 
   const getStatusIcon = () => {
@@ -75,9 +157,14 @@ export function CVUpload({ onUploadComplete }: CVUploadProps) {
       case 'processing':
         return 'AI is analyzing your CV...'
       case 'completed':
+        if (processingMethod === 'openai') {
+          return 'CV analyzed with AI successfully!'
+        } else if (processingMethod === 'fallback') {
+          return 'CV processed (basic parsing)'
+        }
         return 'CV processed successfully!'
       case 'error':
-        return 'Upload failed. Please try again.'
+        return errorMessage || 'Upload failed. Please try again.'
       default:
         return 'Upload your CV to get started'
     }
@@ -136,9 +223,20 @@ export function CVUpload({ onUploadComplete }: CVUploadProps) {
 
         {uploadStatus === 'completed' && (
           <div className="space-y-3">
-            <p className="text-sm text-muted-foreground">
-              Your CV has been processed and is ready for job matching!
-            </p>
+            <div className="text-sm text-muted-foreground space-y-2">
+              {processingMethod === 'openai' ? (
+                <p>Your CV has been analyzed with AI and is ready for job matching!</p>
+              ) : processingMethod === 'fallback' ? (
+                <div>
+                  <p>Your CV has been processed with basic parsing.</p>
+                  <p className="text-xs text-yellow-600 dark:text-yellow-500">
+                    AI analysis is currently unavailable, but you can still use the platform.
+                  </p>
+                </div>
+              ) : (
+                <p>Your CV has been processed and is ready for job matching!</p>
+              )}
+            </div>
             <Button variant="outline" onClick={handleReUpload} data-testid="button-upload-new-cv">
               Upload New CV
             </Button>
@@ -147,9 +245,12 @@ export function CVUpload({ onUploadComplete }: CVUploadProps) {
 
         {uploadStatus === 'error' && (
           <div className="space-y-3">
-            <p className="text-sm text-muted-foreground">
-              There was an error processing your CV. Please try again.
-            </p>
+            <div className="text-sm text-muted-foreground space-y-1">
+              <p>There was an error processing your CV:</p>
+              <p className="text-xs text-red-600 dark:text-red-500 bg-red-50 dark:bg-red-950 p-2 rounded">
+                {errorMessage || 'Unknown error occurred'}
+              </p>
+            </div>
             <Button onClick={handleReUpload} data-testid="button-retry-upload">
               Try Again
             </Button>
