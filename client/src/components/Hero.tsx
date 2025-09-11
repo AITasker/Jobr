@@ -5,7 +5,7 @@ import heroImage from '@assets/generated_images/Career_professionals_working_her
 
 export function Hero() {
   const handleGetStarted = () => {
-    console.log('Get started clicked')
+    window.location.href = '/api/login'
   }
 
   const handleWatchDemo = () => {

@@ -112,6 +112,8 @@ export default function Dashboard() {
   const mockApplications = [
     {
       id: '1',
+      jobId: 'job-1',
+      userId: (user as any)?.id || 'user-1',
       jobTitle: 'Senior Frontend Developer',
       company: 'TechCorp Solutions',
       appliedDate: '3 days ago',
@@ -119,26 +121,51 @@ export default function Dashboard() {
       matchScore: 92,
       emailOpened: true,
       interviewDate: 'Tomorrow, 3:00 PM',
-      notes: 'Great company culture, exciting project opportunities'
+      notes: 'Great company culture, exciting project opportunities',
+      job: {
+        id: 'job-1',
+        title: 'Senior Frontend Developer',
+        company: 'TechCorp Solutions',
+        description: 'We are looking for an experienced Frontend Developer to join our dynamic team.',
+        requirements: ['React', 'TypeScript', 'Tailwind CSS', 'Node.js', '5+ years experience']
+      }
     },
     {
       id: '2',
+      jobId: 'job-2',
+      userId: (user as any)?.id || 'user-1',
       jobTitle: 'Product Designer',
       company: 'Design Studio',
       appliedDate: '1 week ago',
       status: 'viewed' as const,
       matchScore: 78,
       emailOpened: true,
-      notes: 'Waiting for design challenge response'
+      notes: 'Waiting for design challenge response',
+      job: {
+        id: 'job-2',
+        title: 'Product Designer',
+        company: 'Design Studio',
+        description: 'Join our creative team to design intuitive user experiences for mobile and web applications.',
+        requirements: ['Figma', 'UI/UX Design', 'Prototyping', 'User Research']
+      }
     },
     {
       id: '3',
+      jobId: 'job-3',
+      userId: (user as any)?.id || 'user-1',
       jobTitle: 'Full Stack Engineer',
       company: 'StartupXYZ',
       appliedDate: '2 weeks ago',
       status: 'applied' as const,
       matchScore: 85,
-      emailOpened: false
+      emailOpened: false,
+      job: {
+        id: 'job-3',
+        title: 'Full Stack Engineer',
+        company: 'StartupXYZ',
+        description: 'Build scalable web applications using modern technologies in a fast-paced startup environment.',
+        requirements: ['React', 'Node.js', 'MongoDB', 'AWS', '3+ years experience']
+      }
     }
   ]
 
