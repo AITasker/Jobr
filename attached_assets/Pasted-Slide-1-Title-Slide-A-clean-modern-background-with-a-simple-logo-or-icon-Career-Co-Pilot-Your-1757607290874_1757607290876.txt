@@ -1,0 +1,167 @@
+Slide 1: Title Slide
+
+(A clean, modern background with a simple logo or icon)
+
+Career Co-Pilot
+
+Your AI-Powered Job Search Partner
+
+Slide 2: The Problem: The Job Search is Broken
+
+(Iconography of a frustrated person at a laptop or a clock with spinning hands)
+
+The modern job search is a full-time job in itself. For every single application, a candidate has to:
+
+Manually tailor their CV to match the job description (JD).
+
+Write a unique and compelling cover letter.
+
+Draft a professional email.
+
+Track their applications in a messy spreadsheet.
+
+This process takes 2-4 hours per application, leading to burnout and generic submissions that get ignored.
+
+Speaking Point: "We've all been there. Spending an entire Sunday just to apply for 3 or 4 jobs, wondering if anyone even reads it. It's an inefficient and demoralizing process."
+
+Slide 3: Our Solution: The Career Co-Pilot
+
+(A graphic showing a single, streamlined path from A to B, bypassing a tangled mess)
+
+We transform the job search from a manual grind into an intelligent, automated workflow.
+
+Career Co-Pilot is an all-in-one platform that manages the entire application lifecycle for the user, helping them land their dream job faster.
+
+We do this through four key pillars.
+
+Speaking Point: "Imagine reducing that 4-hour process to just a few minutes, giving you confidence that every application you send is perfectly optimized."
+
+Slide 4: Pillar 1: Proactive Job Matching
+
+(An icon of a magnet attracting job listings)
+
+Stop searching, start getting matched.
+
+A user uploads their CV once.
+
+Our AI scans major job boards 24/7.
+
+The platform delivers a curated list of the most relevant jobs directly to the user's dashboard.
+
+Speaking Point: "Instead of the user hunting for jobs, the perfect jobs hunt for them. We cut out the noise."
+
+Slide 5: Pillar 2: The "One-Click Application" Engine
+
+(A graphic of a document being scanned and transformed)
+
+Apply with AI-powered confidence.
+
+For any job, the user clicks "Prepare Application" and our engine:
+
+Instantly tailors the CV and drafts a personalized cover letter.
+
+Generates an "Application Readiness Score" showing how well they match the role.
+
+Allows for final edits before sending.
+
+Speaking Point: "This is our core magic. It's not just about speed; it's about quality and giving the user the confidence that their application is top-tier."
+
+Slide 6: Pillar 3: Application Tracking & Intelligence
+
+(A simple Kanban board graphic: Applied -> Viewed -> Interviewing)
+
+Never lose track of an application again.
+
+Every application is automatically organized on a visual tracking board.
+
+Email Open Tracking notifies the user the moment a recruiter views their application.
+
+Speaking Point: "We solve the post-application black hole. Knowing your email was opened is a powerful piece of feedback that no one else provides."
+
+Slide 7: Pillar 4: AI-Powered Interview Prep
+
+(An icon of a brain or a checklist)
+
+We help you land the job.
+
+Once an interview is scheduled, the platform automatically:
+
+Analyzes the JD and your CV to generate likely interview questions.
+
+Provides structured talking points and examples from your own experience.
+
+Helps you prepare and practice your answers.
+
+Speaking Point: "Our job isn't done when the application is sent. We stay with the user until they get the offer."
+
+Slide 8: The Complete Workflow
+
+(A simple, circular flow diagram connecting the 4 pillars)
+
+Discover -> Apply -> Track -> Interview
+
+Career Co-Pilot creates a seamless, intelligent ecosystem that manages the entire job search journey, making it 10x more efficient and effective.
+
+Speaking Point: "Each feature feeds into the next, creating a 'sticky' platform that becomes an indispensable part of the user's career toolkit."
+
+Slide 9: Our Business Model: Freemium SaaS
+
+(A simple 3-column table)
+
+Explorer (Free)
+
+Applicant (Premium)
+
+Strategist (Pro)
+
+Free
+
+₹249 / month
+
+₹499 / month
+
+3 Full Application Credits
+
+Unlimited Applications
+
+Everything in Applicant
+
+Job Matching Alerts
+
+Application Tracking Board
+
+AI Interview Prep Module
+
+
+
+Email Open Tracking
+
+Advanced Analytics
+
+Speaking Point: "Our model is simple. We let users experience the core magic for free. Active job seekers will see the immense value in the 'Applicant' tier, and those deep in the interview process will upgrade for the 'Strategist' tools."
+
+Slide 10: The Vision
+
+(A simple, bold statement)
+
+To become the indispensable career advancement platform for every professional.
+
+We start with job applications, but the future includes AI-powered salary negotiation, career path planning, and continuous upskilling recommendations.
+
+Speaking Point: "This isn't just a tool; it's the start of a platform that can genuinely guide someone's entire professional life."
+
+Slide 11: The Ask: Let's Build This Together
+
+(Keep this slide clean and direct)
+
+I have the vision, the product roadmap, and the business strategy.
+
+I'm looking for a talented technical partner to be the engineering lead and help bring this vision to life.
+
+Speaking Point: "This is where you come in. I'm looking for someone who is as excited about this problem as I am and has the skills to build a robust, scalable platform."
+
+Slide 12: Thank You & Discussion
+
+Q&A
+
+Let's build the future of the job search.
