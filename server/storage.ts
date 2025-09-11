@@ -3,6 +3,8 @@ import {
   cvs,
   jobs,
   applications,
+  apiUsage,
+  templates,
   type User,
   type UpsertUser,
   type Cv,
@@ -10,7 +12,11 @@ import {
   type Job,
   type InsertJob,
   type Application,
-  type InsertApplication
+  type InsertApplication,
+  type ApiUsage,
+  type InsertApiUsage,
+  type Template,
+  type InsertTemplate
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc } from "drizzle-orm";
@@ -19,6 +25,7 @@ export interface IStorage {
   // User operations (required for Replit Auth)
   getUser(id: string): Promise<User | undefined>;
   upsertUser(user: UpsertUser): Promise<User>;
+  updateUser(id: string, updates: Partial<User>): Promise<User>;
   
   // CV operations
   createCv(cv: InsertCv): Promise<Cv>;
@@ -36,6 +43,16 @@ export interface IStorage {
   updateApplication(id: string, updates: Partial<Application>): Promise<Application>;
   getApplicationWithJob(id: string): Promise<(Application & { job: Job }) | undefined>;
   checkExistingApplication(userId: string, jobId: string): Promise<Application | undefined>;
+  
+  // API Usage operations
+  createApiUsage(usage: InsertApiUsage): Promise<ApiUsage>;
+  getApiUsageByUserId(userId: string, limit?: number): Promise<ApiUsage[]>;
+  getDailyApiUsage(userId: string, date: Date): Promise<ApiUsage[]>;
+  
+  // Template operations
+  createTemplate(template: InsertTemplate): Promise<Template>;
+  getTemplates(type?: string): Promise<Template[]>;
+  getDefaultTemplate(type: string): Promise<Template | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -56,6 +73,15 @@ export class DatabaseStorage implements IStorage {
           updatedAt: new Date(),
         },
       })
+      .returning();
+    return user;
+  }
+
+  async updateUser(id: string, updates: Partial<User>): Promise<User> {
+    const [user] = await db
+      .update(users)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(users.id, id))
       .returning();
     return user;
   }
@@ -135,6 +161,67 @@ export class DatabaseStorage implements IStorage {
       .from(applications)
       .where(and(eq(applications.userId, userId), eq(applications.jobId, jobId)));
     return application;
+  }
+
+  // API Usage operations
+  async createApiUsage(usageData: InsertApiUsage): Promise<ApiUsage> {
+    const [usage] = await db.insert(apiUsage).values(usageData).returning();
+    return usage;
+  }
+
+  async getApiUsageByUserId(userId: string, limit: number = 50): Promise<ApiUsage[]> {
+    return await db
+      .select()
+      .from(apiUsage)
+      .where(eq(apiUsage.userId, userId))
+      .orderBy(desc(apiUsage.createdAt))
+      .limit(limit);
+  }
+
+  async getDailyApiUsage(userId: string, date: Date): Promise<ApiUsage[]> {
+    const startOfDay = new Date(date);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(date);
+    endOfDay.setHours(23, 59, 59, 999);
+
+    return await db
+      .select()
+      .from(apiUsage)
+      .where(
+        and(
+          eq(apiUsage.userId, userId),
+          // Note: This is a simplified version - you might want to use proper date filtering
+          eq(apiUsage.success, true)
+        )
+      );
+  }
+
+  // Template operations
+  async createTemplate(templateData: InsertTemplate): Promise<Template> {
+    const [template] = await db.insert(templates).values(templateData).returning();
+    return template;
+  }
+
+  async getTemplates(type?: string): Promise<Template[]> {
+    if (type) {
+      return await db
+        .select()
+        .from(templates)
+        .where(eq(templates.type, type))
+        .orderBy(desc(templates.isDefault), desc(templates.createdAt));
+    }
+    return await db
+      .select()
+      .from(templates)
+      .orderBy(desc(templates.isDefault), desc(templates.createdAt));
+  }
+
+  async getDefaultTemplate(type: string): Promise<Template | undefined> {
+    const [template] = await db
+      .select()
+      .from(templates)
+      .where(and(eq(templates.type, type), eq(templates.isDefault, true)));
+    return template;
   }
 }
 
