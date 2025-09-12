@@ -472,12 +472,14 @@ export class DatabaseStorage implements IStorage {
     
     if (errorMessage) {
       updates.errorMessage = errorMessage;
-      updates.retryCount = sql`${stripeEvents.retryCount} + 1`;
     }
 
     const [event] = await db
       .update(stripeEvents)
-      .set(updates)
+      .set(errorMessage ? {
+        ...updates,
+        retryCount: sql`${stripeEvents.retryCount} + 1`
+      } : updates)
       .where(eq(stripeEvents.eventId, eventId))
       .returning();
     return event;
