@@ -1,4 +1,5 @@
 import type { Express } from "express";
+import express from "express";
 import { createServer, type Server } from "http";
 import multer from "multer";
 import rateLimit from "express-rate-limit";
@@ -12,7 +13,8 @@ import { JobMatchingService } from "./jobMatchingService";
 import { ApplicationPreparationService } from "./applicationPreparationService";
 import { AuthService } from "./authService";
 import { JwtUtils } from "./jwtUtils";
-import { registerSchema, loginSchema, insertJobSchema, insertApplicationSchema } from "@shared/schema";
+import { SubscriptionService } from "./subscriptionService";
+import { registerSchema, loginSchema, insertJobSchema, insertApplicationSchema, createSubscriptionSchema, updateSubscriptionSchema, VALID_PRICE_MAPPINGS } from "@shared/schema";
 
 // Configure rate limiting for authentication routes
 const authRateLimit = rateLimit({
@@ -708,6 +710,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const userId = req.user.claims.sub;
       
+      // Check subscription limits before creating application
+      const canCreate = await SubscriptionService.canUserCreateApplication(userId);
+      if (!canCreate.allowed) {
+        return res.status(403).json({
+          message: canCreate.reason,
+          currentUsage: canCreate.currentUsage,
+          limit: canCreate.limit,
+          requiresUpgrade: true,
+          code: "SUBSCRIPTION_LIMIT_REACHED"
+        });
+      }
+      
       // Validate input data
       const validationResult = insertApplicationSchema.safeParse({ ...req.body, userId });
       if (!validationResult.success) {
@@ -726,6 +740,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!applicationData.matchScore && applicationData.matchScore !== 0) applicationData.matchScore = 50;
       
       const application = await storage.createApplication(applicationData);
+      
+      // Record application creation for usage tracking
+      await SubscriptionService.recordApplicationCreated(userId);
+      
       res.status(201).json(application);
     } catch (error) {
       console.error("Error creating application:", error);
@@ -848,6 +866,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { id } = req.params;
       const userId = req.user.claims.sub;
+      
+      // Check AI feature access for preparation
+      const canAccessAI = await SubscriptionService.canUserAccessAIFeatures(userId);
+      if (!canAccessAI.allowed) {
+        return res.status(403).json({
+          message: canAccessAI.reason,
+          requiresUpgrade: canAccessAI.requiresUpgrade,
+          code: "AI_FEATURES_REQUIRED"
+        });
+      }
       
       // Get application with job details
       const applicationWithJob = await storage.getApplicationWithJob(id);
@@ -1122,6 +1150,212 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error batch preparing applications:", error);
       res.status(500).json({ message: "Failed to batch prepare applications" });
+    }
+  });
+
+  // Stripe subscription routes with comprehensive security
+  // Note: Stripe webhook is now handled in server/index.ts before body parsers
+  // Stripe initialization is now in server/stripe.ts
+  
+  // Get stripe instance from the stripe service
+  const { stripe } = await import('./stripe');
+
+  // Subscription management routes
+
+  // Get usage statistics - WITH STRIPE NULL CHECK
+  app.get('/api/subscription/usage', isAuthenticated, async (req: any, res) => {
+    try {
+      // Critical: Check Stripe configuration for subscription-related endpoints
+      if (!stripe) {
+        return res.status(503).json({ 
+          message: "Stripe integration not configured",
+          code: "STRIPE_NOT_CONFIGURED"
+        });
+      }
+
+      const userId = req.user.claims.sub;
+      const stats = await SubscriptionService.getUserUsageStats(userId);
+      
+      if (!stats) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      res.json(stats);
+    } catch (error) {
+      console.error("Error fetching usage stats:", error);
+      res.status(500).json({ message: "Failed to fetch usage statistics" });
+    }
+  });
+
+  // Get current subscription status - WITH STRIPE NULL CHECK
+  app.get('/api/subscription', isAuthenticated, async (req: any, res) => {
+    try {
+      // Critical: Check Stripe configuration for subscription-related endpoints
+      if (!stripe) {
+        return res.status(503).json({ 
+          message: "Stripe integration not configured",
+          code: "STRIPE_NOT_CONFIGURED"
+        });
+      }
+
+      const userId = req.user.claims.sub;
+      
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      const activeSubscription = await storage.getActiveSubscriptionByUserId(userId);
+      
+      res.json({
+        currentPlan: user.plan,
+        subscriptionStatus: user.subscriptionStatus,
+        currentPeriodEnd: user.subscriptionCurrentPeriodEnd,
+        applicationsThisMonth: user.applicationsThisMonth,
+        applicationsLimit: user.plan === 'Free' ? 5 : -1, // -1 means unlimited
+        stripeCustomerId: user.stripeCustomerId,
+        activeSubscription,
+        validPlans: Object.keys(VALID_PRICE_MAPPINGS) // Available upgrade plans
+      });
+    } catch (error) {
+      console.error("Error fetching subscription:", error);
+      res.status(500).json({ message: "Failed to fetch subscription" });
+    }
+  });
+
+  // Create subscription checkout session - SECURE PRICE VALIDATION
+  app.post('/api/subscription/create', isAuthenticated, async (req: any, res) => {
+    try {
+      // Critical: Check Stripe configuration
+      if (!stripe) {
+        return res.status(503).json({ 
+          message: "Stripe integration not configured. Please set STRIPE_SECRET_KEY environment variable.",
+          code: "STRIPE_NOT_CONFIGURED"
+        });
+      }
+
+      const userId = req.user.claims.sub;
+      const validationResult = createSubscriptionSchema.safeParse(req.body);
+      
+      if (!validationResult.success) {
+        return res.status(400).json({
+          message: "Invalid input data",
+          errors: validationResult.error.errors,
+          code: "VALIDATION_ERROR"
+        });
+      }
+
+      const { plan } = validationResult.data;
+      
+      // CRITICAL SECURITY: Server-side price validation - prevent priceId manipulation
+      const priceId = VALID_PRICE_MAPPINGS[plan];
+      if (!priceId) {
+        return res.status(400).json({
+          message: `Invalid plan selected: ${plan}`,
+          code: "INVALID_PLAN"
+        });
+      }
+
+      const user = await storage.getUser(userId);
+      
+      if (!user) {
+        return res.status(404).json({ 
+          message: "User not found",
+          code: "USER_NOT_FOUND"
+        });
+      }
+
+      let customerId = user.stripeCustomerId;
+
+      // Create Stripe customer if doesn't exist
+      if (!customerId) {
+        const customer = await stripe.customers.create({
+          email: user.email,
+          metadata: {
+            userId: user.id,
+            firstName: user.firstName || '',
+            lastName: user.lastName || ''
+          }
+        });
+        customerId = customer.id;
+        await storage.updateUserStripeInfo(userId, customerId);
+      }
+
+      // Create checkout session with server-validated priceId - SECURITY CRITICAL
+      const session = await stripe.checkout.sessions.create({
+        customer: customerId,
+        payment_method_types: ['card'],
+        line_items: [
+          {
+            price: priceId, // Uses server-validated priceId to prevent tampering
+            quantity: 1,
+          },
+        ],
+        mode: 'subscription',
+        success_url: `${req.headers.origin}/dashboard?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${req.headers.origin}/dashboard?cancelled=true`,
+        metadata: {
+          userId,
+          plan
+        }
+      });
+
+      res.json({ sessionUrl: session.url });
+    } catch (error) {
+      console.error("Error creating subscription:", error);
+      res.status(500).json({ 
+        message: "Failed to create subscription",
+        code: "SUBSCRIPTION_CREATE_FAILED"
+      });
+    }
+  });
+
+  // Cancel subscription - WITH STRIPE NULL CHECK
+  app.post('/api/subscription/cancel', isAuthenticated, async (req: any, res) => {
+    try {
+      // Critical: Check Stripe configuration
+      if (!stripe) {
+        return res.status(503).json({ 
+          message: "Stripe integration not configured",
+          code: "STRIPE_NOT_CONFIGURED"
+        });
+      }
+
+      const userId = req.user.claims.sub;
+      const { cancelAtPeriodEnd = true } = req.body;
+      
+      const user = await storage.getUser(userId);
+      if (!user || !user.stripeSubscriptionId) {
+        return res.status(404).json({ 
+          message: "No active subscription found",
+          code: "NO_SUBSCRIPTION"
+        });
+      }
+
+      const subscription = await stripe.subscriptions.update(user.stripeSubscriptionId, {
+        cancel_at_period_end: cancelAtPeriodEnd
+      });
+
+      // Update local subscription record
+      const localSubscription = await storage.getActiveSubscriptionByUserId(userId);
+      if (localSubscription) {
+        await storage.updateSubscription(localSubscription.id, {
+          cancelAtPeriodEnd: cancelAtPeriodEnd,
+          canceledAt: cancelAtPeriodEnd ? new Date() : null
+        });
+      }
+
+      res.json({ 
+        success: true, 
+        cancelAtPeriodEnd: subscription.cancel_at_period_end,
+        currentPeriodEnd: new Date(subscription.current_period_end * 1000)
+      });
+    } catch (error) {
+      console.error("Error cancelling subscription:", error);
+      res.status(500).json({ 
+        message: "Failed to cancel subscription",
+        code: "SUBSCRIPTION_CANCEL_FAILED"
+      });
     }
   });
 

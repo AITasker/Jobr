@@ -7,6 +7,8 @@ import {
   templates,
   authAccounts,
   otpCodes,
+  subscriptions,
+  stripeEvents,
   type User,
   type UpsertUser,
   type Cv,
@@ -22,10 +24,14 @@ import {
   type AuthAccount,
   type InsertAuthAccount,
   type OtpCode,
-  type InsertOtpCode
+  type InsertOtpCode,
+  type Subscription,
+  type InsertSubscription,
+  type StripeEvent,
+  type InsertStripeEvent
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, sql } from "drizzle-orm";
 
 export interface IStorage {
   // User operations (required for Replit Auth)
@@ -73,6 +79,23 @@ export interface IStorage {
   getOtpCode(target: string, purpose: string): Promise<OtpCode | undefined>;
   updateOtpCode(id: string, updates: Partial<OtpCode>): Promise<OtpCode>;
   cleanupExpiredOtpCodes(): Promise<void>;
+
+  // Subscription operations
+  createSubscription(subscription: InsertSubscription): Promise<Subscription>;
+  getSubscriptionsByUserId(userId: string): Promise<Subscription[]>;
+  getActiveSubscriptionByUserId(userId: string): Promise<Subscription | undefined>;
+  updateSubscription(id: string, updates: Partial<Subscription>): Promise<Subscription>;
+  updateUserStripeInfo(userId: string, customerId?: string, subscriptionId?: string): Promise<User>;
+  incrementUserApplicationCount(userId: string): Promise<User>;
+  resetMonthlyApplicationCount(userId: string): Promise<User>;
+  getUserByStripeCustomerId(customerId: string): Promise<User | undefined>;
+  updateUserPlan(userId: string, plan: string, subscriptionStatus?: string, periodEnd?: Date): Promise<User>;
+
+  // Stripe Event operations for webhook idempotency
+  createStripeEvent(event: InsertStripeEvent): Promise<StripeEvent>;
+  getStripeEventByEventId(eventId: string): Promise<StripeEvent | undefined>;
+  markStripeEventProcessed(eventId: string, errorMessage?: string): Promise<StripeEvent>;
+  cleanupOldStripeEvents(olderThanDays: number): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -318,6 +341,160 @@ export class DatabaseStorage implements IStorage {
     await db
       .delete(otpCodes)
       .where(eq(otpCodes.expiresAt, new Date()));
+  }
+
+  // Subscription operations
+  async createSubscription(subscriptionData: InsertSubscription): Promise<Subscription> {
+    const [subscription] = await db.insert(subscriptions).values(subscriptionData).returning();
+    return subscription;
+  }
+
+  async getSubscriptionsByUserId(userId: string): Promise<Subscription[]> {
+    return await db
+      .select()
+      .from(subscriptions)
+      .where(eq(subscriptions.userId, userId))
+      .orderBy(desc(subscriptions.createdAt));
+  }
+
+  async getActiveSubscriptionByUserId(userId: string): Promise<Subscription | undefined> {
+    const [subscription] = await db
+      .select()
+      .from(subscriptions)
+      .where(
+        and(
+          eq(subscriptions.userId, userId),
+          eq(subscriptions.status, "active")
+        )
+      )
+      .orderBy(desc(subscriptions.createdAt));
+    return subscription;
+  }
+
+  async updateSubscription(id: string, updates: Partial<Subscription>): Promise<Subscription> {
+    const [subscription] = await db
+      .update(subscriptions)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(subscriptions.id, id))
+      .returning();
+    return subscription;
+  }
+
+  async updateUserStripeInfo(userId: string, customerId?: string, subscriptionId?: string): Promise<User> {
+    const updates: Partial<User> = {
+      updatedAt: new Date()
+    };
+    
+    if (customerId) {
+      updates.stripeCustomerId = customerId;
+    }
+    
+    if (subscriptionId) {
+      updates.stripeSubscriptionId = subscriptionId;
+    }
+
+    const [user] = await db
+      .update(users)
+      .set(updates)
+      .where(eq(users.id, userId))
+      .returning();
+    return user;
+  }
+
+  async incrementUserApplicationCount(userId: string): Promise<User> {
+    const [user] = await db
+      .update(users)
+      .set({ 
+        applicationsThisMonth: sql`${users.applicationsThisMonth} + 1`,
+        updatedAt: new Date()
+      })
+      .where(eq(users.id, userId))
+      .returning();
+    return user;
+  }
+
+  async resetMonthlyApplicationCount(userId: string): Promise<User> {
+    const [user] = await db
+      .update(users)
+      .set({ 
+        applicationsThisMonth: 0,
+        monthlyApplicationsReset: new Date(),
+        updatedAt: new Date()
+      })
+      .where(eq(users.id, userId))
+      .returning();
+    return user;
+  }
+
+  async getUserByStripeCustomerId(customerId: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.stripeCustomerId, customerId));
+    return user;
+  }
+
+  async updateUserPlan(userId: string, plan: string, subscriptionStatus?: string, periodEnd?: Date): Promise<User> {
+    const updates: Partial<User> = {
+      plan,
+      updatedAt: new Date()
+    };
+    
+    if (subscriptionStatus) {
+      updates.subscriptionStatus = subscriptionStatus;
+    }
+    
+    if (periodEnd) {
+      updates.subscriptionCurrentPeriodEnd = periodEnd;
+    }
+
+    const [user] = await db
+      .update(users)
+      .set(updates)
+      .where(eq(users.id, userId))
+      .returning();
+    return user;
+  }
+
+  // Stripe Event operations for webhook idempotency
+  async createStripeEvent(eventData: InsertStripeEvent): Promise<StripeEvent> {
+    const [event] = await db.insert(stripeEvents).values(eventData).returning();
+    return event;
+  }
+
+  async getStripeEventByEventId(eventId: string): Promise<StripeEvent | undefined> {
+    const [event] = await db.select().from(stripeEvents).where(eq(stripeEvents.eventId, eventId));
+    return event;
+  }
+
+  async markStripeEventProcessed(eventId: string, errorMessage?: string): Promise<StripeEvent> {
+    const updates: Partial<StripeEvent> = {
+      processed: true,
+      processedAt: new Date()
+    };
+    
+    if (errorMessage) {
+      updates.errorMessage = errorMessage;
+      updates.retryCount = sql`${stripeEvents.retryCount} + 1`;
+    }
+
+    const [event] = await db
+      .update(stripeEvents)
+      .set(updates)
+      .where(eq(stripeEvents.eventId, eventId))
+      .returning();
+    return event;
+  }
+
+  async cleanupOldStripeEvents(olderThanDays: number = 30): Promise<void> {
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - olderThanDays);
+    
+    await db
+      .delete(stripeEvents)
+      .where(
+        and(
+          eq(stripeEvents.processed, true),
+          sql`${stripeEvents.createdAt} < ${cutoffDate}`
+        )
+      );
   }
 }
 

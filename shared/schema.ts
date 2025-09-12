@@ -33,13 +33,42 @@ export const users = pgTable("users", {
   firstName: varchar("first_name"),
   lastName: varchar("last_name"),
   profileImageUrl: varchar("profile_image_url"),
-  plan: varchar("plan").default("Explorer").notNull(),
-  creditsRemaining: integer("credits_remaining").default(3).notNull(),
+  plan: varchar("plan").default("Free").notNull(), // Free, Premium, Pro
+  stripeCustomerId: varchar("stripe_customer_id"),
+  stripeSubscriptionId: varchar("stripe_subscription_id"),
+  subscriptionStatus: varchar("subscription_status").default("active"), // active, canceled, past_due, incomplete
+  subscriptionCurrentPeriodEnd: timestamp("subscription_current_period_end"),
+  applicationsThisMonth: integer("applications_this_month").default(0).notNull(),
+  monthlyApplicationsReset: timestamp("monthly_applications_reset").defaultNow(),
+  creditsRemaining: integer("credits_remaining").default(5).notNull(), // Free tier gets 5 applications
   apiCallsToday: integer("api_calls_today").default(0).notNull(),
   lastApiCallReset: timestamp("last_api_call_reset").defaultNow(),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
+
+// Subscriptions table for tracking subscription history and events
+export const subscriptions = pgTable("subscriptions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  stripeSubscriptionId: varchar("stripe_subscription_id").unique(),
+  stripePriceId: varchar("stripe_price_id").notNull(),
+  status: varchar("status").notNull(), // active, canceled, incomplete, incomplete_expired, past_due, trialing, unpaid
+  plan: varchar("plan").notNull(), // Free, Premium, Pro
+  currentPeriodStart: timestamp("current_period_start"),
+  currentPeriodEnd: timestamp("current_period_end"),
+  canceledAt: timestamp("canceled_at"),
+  cancelAtPeriodEnd: boolean("cancel_at_period_end").default(false),
+  trialStart: timestamp("trial_start"),
+  trialEnd: timestamp("trial_end"),
+  metadata: jsonb("metadata"), // Store additional Stripe metadata
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_subscriptions_user_id").on(table.userId),
+  index("idx_subscriptions_stripe_id").on(table.stripeSubscriptionId),
+  index("idx_subscriptions_status").on(table.status),
+]);
 
 // CV data table
 export const cvs = pgTable("cvs", {
@@ -150,12 +179,37 @@ export const otpCodes = pgTable("otp_codes", {
   index("idx_otp_codes_expires_at").on(table.expiresAt),
 ]);
 
+// Stripe events table for webhook idempotency tracking
+export const stripeEvents = pgTable("stripe_events", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  eventId: varchar("event_id").unique().notNull(), // Stripe event ID
+  eventType: varchar("event_type").notNull(), // Event type from Stripe
+  processed: boolean("processed").default(false),
+  processedAt: timestamp("processed_at"),
+  errorMessage: text("error_message"), // Store error if processing failed
+  retryCount: integer("retry_count").default(0),
+  metadata: jsonb("metadata"), // Store event data for debugging
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_stripe_events_event_id").on(table.eventId),
+  index("idx_stripe_events_processed").on(table.processed),
+  index("idx_stripe_events_created_at").on(table.createdAt),
+]);
+
 // Relations
 export const usersRelations = relations(users, ({ many }) => ({
   cvs: many(cvs),
   applications: many(applications),
   apiUsage: many(apiUsage),
   authAccounts: many(authAccounts),
+  subscriptions: many(subscriptions),
+}));
+
+export const subscriptionsRelations = relations(subscriptions, ({ one }) => ({
+  user: one(users, {
+    fields: [subscriptions.userId],
+    references: [users.id],
+  }),
 }));
 
 export const authAccountsRelations = relations(authAccounts, ({ one }) => ({
@@ -203,6 +257,8 @@ export const insertApiUsageSchema = createInsertSchema(apiUsage).omit({ id: true
 export const insertTemplateSchema = createInsertSchema(templates).omit({ id: true, createdAt: true });
 export const insertAuthAccountSchema = createInsertSchema(authAccounts).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertOtpCodeSchema = createInsertSchema(otpCodes).omit({ id: true, createdAt: true });
+export const insertStripeEventSchema = createInsertSchema(stripeEvents).omit({ id: true, createdAt: true });
+export const insertSubscriptionSchema = createInsertSchema(subscriptions).omit({ id: true, createdAt: true, updatedAt: true });
 
 // Additional auth-specific schemas
 export const registerSchema = z.object({
@@ -215,6 +271,33 @@ export const registerSchema = z.object({
 export const loginSchema = z.object({
   email: z.string().email("Please enter a valid email address"),
   password: z.string().min(1, "Password is required"),
+});
+
+// Subscription-specific schemas
+export const planSchema = z.enum(["Free", "Premium", "Pro"]);
+
+// Server-side price validation schema with allowlisted plan->priceId mappings
+export const createSubscriptionSchema = z.object({
+  plan: planSchema,
+});
+
+// Valid price ID mappings for security (these would be configured via environment variables)
+export const VALID_PRICE_MAPPINGS: Record<string, string> = {
+  "Premium": process.env.STRIPE_PRICE_ID_PREMIUM || "price_premium_default",
+  "Pro": process.env.STRIPE_PRICE_ID_PRO || "price_pro_default",
+};
+
+// Webhook event validation schema
+export const webhookEventIdempotencySchema = z.object({
+  eventId: z.string().min(1),
+  eventType: z.string().min(1),
+  processed: z.boolean().default(false),
+  processedAt: z.date().optional(),
+});
+
+export const updateSubscriptionSchema = z.object({
+  plan: planSchema.optional(),
+  cancelAtPeriodEnd: z.boolean().optional(),
 });
 
 // Types
@@ -234,5 +317,12 @@ export type InsertAuthAccount = z.infer<typeof insertAuthAccountSchema>;
 export type AuthAccount = typeof authAccounts.$inferSelect;
 export type InsertOtpCode = z.infer<typeof insertOtpCodeSchema>;
 export type OtpCode = typeof otpCodes.$inferSelect;
+export type InsertStripeEvent = z.infer<typeof insertStripeEventSchema>;
+export type StripeEvent = typeof stripeEvents.$inferSelect;
+export type InsertSubscription = z.infer<typeof insertSubscriptionSchema>;
+export type Subscription = typeof subscriptions.$inferSelect;
 export type RegisterData = z.infer<typeof registerSchema>;
 export type LoginData = z.infer<typeof loginSchema>;
+export type PlanType = z.infer<typeof planSchema>;
+export type CreateSubscriptionData = z.infer<typeof createSubscriptionSchema>;
+export type UpdateSubscriptionData = z.infer<typeof updateSubscriptionSchema>;

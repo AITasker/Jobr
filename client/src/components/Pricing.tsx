@@ -3,47 +3,52 @@ import { PricingCard } from '@/components/PricingCard'
 export function Pricing() {
   const pricingPlans = [
     {
-      title: 'Explorer',
+      title: 'Free',
       price: 'Free',
       description: 'Perfect for getting started with AI job search',
       features: [
-        '3 Full Application Credits',
-        'Job Matching Alerts',
-        'Basic Application Tracking',
-        'Community Support',
-        'CV Analysis & Feedback'
+        '5 Applications per month',
+        'Basic Job Matching',
+        'Application Tracking',
+        'CV Upload & Analysis',
+        'Community Support'
       ],
-      buttonText: 'Start Free'
+      buttonText: 'Start Free',
+      planId: 'free'
     },
     {
-      title: 'Applicant',
-      price: '₹249',
+      title: 'Premium',
+      price: '$19',
+      period: '/ month',
       description: 'For active job seekers who want unlimited access',
       features: [
         'Unlimited Applications',
+        'AI-Generated Cover Letters',
         'Advanced Job Matching',
-        'Application Tracking Board',
         'Email Open Tracking',
         'Priority Support',
-        'Custom Cover Letter Templates'
+        'Custom CV Tailoring'
       ],
       isPopular: true,
-      buttonText: 'Go Premium'
+      buttonText: 'Go Premium',
+      planId: 'premium'
     },
     {
-      title: 'Strategist',
-      price: '₹499',
+      title: 'Pro',
+      price: '$49',
+      period: '/ month',
       description: 'Complete career advancement toolkit',
       features: [
-        'Everything in Applicant',
-        'AI Interview Prep Module',
-        'Advanced Analytics',
+        'Everything in Premium',
+        'Advanced Analytics Dashboard',
+        'AI Interview Preparation',
+        'Premium Cover Letter Templates',
         'Career Path Planning',
-        'Salary Negotiation Tools',
-        'Dedicated Career Advisor',
+        'Dedicated Support',
         'Priority Job Matching'
       ],
-      buttonText: 'Go Pro'
+      buttonText: 'Go Pro',
+      planId: 'pro'
     }
   ]
 

@@ -43,15 +43,28 @@ export function Header({ showAuth = true }: HeaderProps) {
 
           {/* Navigation */}
           <nav className="hidden md:flex items-center gap-6">
-            <a href="#features" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
-              Features
-            </a>
-            <a href="#pricing" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
-              Pricing
-            </a>
-            <a href="#about" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
-              About
-            </a>
+            {isAuthenticated ? (
+              <>
+                <a href="/dashboard" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
+                  Dashboard
+                </a>
+                <a href="/billing" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
+                  Billing
+                </a>
+              </>
+            ) : (
+              <>
+                <a href="#features" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
+                  Features
+                </a>
+                <a href="#pricing" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
+                  Pricing
+                </a>
+                <a href="#about" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
+                  About
+                </a>
+              </>
+            )}
           </nav>
 
           {/* User Actions */}
