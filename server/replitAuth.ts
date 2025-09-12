@@ -8,11 +8,14 @@ import memoize from "memoizee";
 import connectPg from "connect-pg-simple";
 import { storage } from "./storage";
 
-if (!process.env.REPLIT_DOMAINS) {
-  throw new Error("Environment variable REPLIT_DOMAINS not provided");
+// Skip Replit auth setup if not in Replit environment
+const isReplitEnvironment = !!process.env.REPLIT_DOMAINS;
+
+if (!isReplitEnvironment) {
+  console.log("Running in local development mode - Replit auth disabled");
 }
 
-const getOidcConfig = memoize(
+const getOidcConfig = isReplitEnvironment ? memoize(
   async () => {
     return await client.discovery(
       new URL(process.env.ISSUER_URL ?? "https://replit.com/oidc"),
@@ -20,10 +23,26 @@ const getOidcConfig = memoize(
     );
   },
   { maxAge: 3600 * 1000 }
-);
+) : null;
 
 export function getSession() {
   const sessionTtl = 7 * 24 * 60 * 60 * 1000; // 1 week
+  
+  if (!isReplitEnvironment) {
+    // Local development session without PostgreSQL store
+    return session({
+      secret: process.env.SESSION_SECRET || 'dev-session-secret-change-in-production',
+      resave: false,
+      saveUninitialized: false,
+      cookie: {
+        httpOnly: true,
+        secure: false, // Allow HTTP in local development
+        maxAge: sessionTtl,
+      },
+    });
+  }
+  
+  // Production Replit session with PostgreSQL store
   const pgStore = connectPg(session);
   const sessionStore = new pgStore({
     conString: process.env.DATABASE_URL,
@@ -71,6 +90,12 @@ export async function setupAuth(app: Express) {
   app.use(getSession());
   app.use(passport.initialize());
   app.use(passport.session());
+
+  // Only setup Replit OIDC auth if in Replit environment
+  if (!isReplitEnvironment) {
+    console.log("Skipping Replit OIDC setup - running in local development");
+    return;
+  }
 
   const config = await getOidcConfig();
 
