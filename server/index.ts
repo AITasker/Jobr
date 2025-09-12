@@ -3,6 +3,7 @@ import cookieParser from "cookie-parser";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { StripeWebhookService } from "./stripe";
+import { PhonePeService } from "./phonepe";
 
 const app = express();
 
@@ -10,6 +11,11 @@ const app = express();
 // Stripe webhooks need raw body data for signature verification
 app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), (req, res) => {
   StripeWebhookService.handleWebhook(req, res);
+});
+
+// PhonePe webhook endpoint
+app.post('/api/phonepe/webhook', express.json(), (req, res) => {
+  PhonePeService.handleWebhook(req, res);
 });
 
 // Body parsers come AFTER webhook registration

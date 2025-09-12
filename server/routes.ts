@@ -1153,26 +1153,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Stripe subscription routes with comprehensive security
-  // Note: Stripe webhook is now handled in server/index.ts before body parsers
-  // Stripe initialization is now in server/stripe.ts
+  // PhonePe subscription routes with comprehensive security
+  // Note: PhonePe webhook is handled in server/index.ts
   
-  // Get stripe instance from the stripe service
-  const { stripe } = await import('./stripe');
+  // Import PhonePe service
+  const { PhonePeService } = await import('./phonepe');
 
   // Subscription management routes
 
-  // Get usage statistics - WITH STRIPE NULL CHECK
+  // Get usage statistics
   app.get('/api/subscription/usage', isAuthenticated, async (req: any, res) => {
     try {
-      // Critical: Check Stripe configuration for subscription-related endpoints
-      if (!stripe) {
-        return res.status(503).json({ 
-          message: "Stripe integration not configured",
-          code: "STRIPE_NOT_CONFIGURED"
-        });
-      }
-
       const userId = req.user.claims.sub;
       const stats = await SubscriptionService.getUserUsageStats(userId);
       
@@ -1187,17 +1178,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get current subscription status - WITH STRIPE NULL CHECK
+  // Get current subscription status
   app.get('/api/subscription', isAuthenticated, async (req: any, res) => {
     try {
-      // Critical: Check Stripe configuration for subscription-related endpoints
-      if (!stripe) {
-        return res.status(503).json({ 
-          message: "Stripe integration not configured",
-          code: "STRIPE_NOT_CONFIGURED"
-        });
-      }
-
       const userId = req.user.claims.sub;
       
       const user = await storage.getUser(userId);
@@ -1213,9 +1196,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         currentPeriodEnd: user.subscriptionCurrentPeriodEnd,
         applicationsThisMonth: user.applicationsThisMonth,
         applicationsLimit: user.plan === 'Free' ? 5 : -1, // -1 means unlimited
-        stripeCustomerId: user.stripeCustomerId,
+        phonepeCustomerId: user.stripeCustomerId, // Reuse field for PhonePe customer tracking
         activeSubscription,
-        validPlans: Object.keys(VALID_PRICE_MAPPINGS) // Available upgrade plans
+        validPlans: Object.keys(VALID_PRICE_MAPPINGS), // Available upgrade plans
+        pricing: VALID_PRICE_MAPPINGS // Include pricing information
       });
     } catch (error) {
       console.error("Error fetching subscription:", error);
@@ -1223,17 +1207,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Create subscription checkout session - SECURE PRICE VALIDATION
+  // Create PhonePe payment - SECURE PRICE VALIDATION
   app.post('/api/subscription/create', isAuthenticated, async (req: any, res) => {
     try {
-      // Critical: Check Stripe configuration
-      if (!stripe) {
-        return res.status(503).json({ 
-          message: "Stripe integration not configured. Please set STRIPE_SECRET_KEY environment variable.",
-          code: "STRIPE_NOT_CONFIGURED"
-        });
-      }
-
       const userId = req.user.claims.sub;
       const validationResult = createSubscriptionSchema.safeParse(req.body);
       
@@ -1247,9 +1223,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const { plan } = validationResult.data;
       
-      // CRITICAL SECURITY: Server-side price validation - prevent priceId manipulation
-      const priceId = VALID_PRICE_MAPPINGS[plan];
-      if (!priceId) {
+      // CRITICAL SECURITY: Server-side price validation - prevent price manipulation
+      const amount = VALID_PRICE_MAPPINGS[plan];
+      if (!amount) {
         return res.status(400).json({
           message: `Invalid plan selected: ${plan}`,
           code: "INVALID_PLAN"
@@ -1265,96 +1241,110 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      let customerId = user.stripeCustomerId;
-
-      // Create Stripe customer if doesn't exist
-      if (!customerId) {
-        const customer = await stripe.customers.create({
-          email: user.email,
-          metadata: {
-            userId: user.id,
-            firstName: user.firstName || '',
-            lastName: user.lastName || ''
-          }
+      if (!user.email) {
+        return res.status(400).json({ 
+          message: "User email not found",
+          code: "EMAIL_REQUIRED"
         });
-        customerId = customer.id;
-        await storage.updateUserStripeInfo(userId, customerId);
       }
 
-      // Create checkout session with server-validated priceId - SECURITY CRITICAL
-      const session = await stripe.checkout.sessions.create({
-        customer: customerId,
-        payment_method_types: ['card'],
-        line_items: [
-          {
-            price: priceId, // Uses server-validated priceId to prevent tampering
-            quantity: 1,
-          },
-        ],
-        mode: 'subscription',
-        success_url: `${req.headers.origin}/dashboard?session_id={CHECKOUT_SESSION_ID}`,
-        cancel_url: `${req.headers.origin}/dashboard?cancelled=true`,
-        metadata: {
-          userId,
-          plan
-        }
-      });
+      // Create PhonePe payment request
+      const redirectUrl = `${req.headers.origin}/dashboard?payment=success`;
+      const paymentResponse = await PhonePeService.createPayment(
+        userId,
+        plan,
+        user.email,
+        redirectUrl
+      );
 
-      res.json({ sessionUrl: session.url });
+      if (paymentResponse.success && paymentResponse.data) {
+        res.json({
+          success: true,
+          paymentUrl: paymentResponse.data.instrumentResponse.redirectInfo.url,
+          merchantTransactionId: paymentResponse.data.merchantTransactionId
+        });
+      } else {
+        res.status(400).json({
+          message: paymentResponse.message || "Payment creation failed",
+          code: paymentResponse.code || "PAYMENT_FAILED"
+        });
+      }
     } catch (error) {
-      console.error("Error creating subscription:", error);
+      console.error("Error creating PhonePe payment:", error);
       res.status(500).json({ 
-        message: "Failed to create subscription",
-        code: "SUBSCRIPTION_CREATE_FAILED"
+        message: "Failed to create payment",
+        code: "PAYMENT_CREATE_FAILED"
       });
     }
   });
 
-  // Cancel subscription - WITH STRIPE NULL CHECK
+  // Cancel subscription 
   app.post('/api/subscription/cancel', isAuthenticated, async (req: any, res) => {
     try {
-      // Critical: Check Stripe configuration
-      if (!stripe) {
-        return res.status(503).json({ 
-          message: "Stripe integration not configured",
-          code: "STRIPE_NOT_CONFIGURED"
-        });
-      }
-
       const userId = req.user.claims.sub;
       const { cancelAtPeriodEnd = true } = req.body;
       
       const user = await storage.getUser(userId);
-      if (!user || !user.stripeSubscriptionId) {
+      if (!user) {
+        return res.status(404).json({ 
+          message: "User not found",
+          code: "USER_NOT_FOUND"
+        });
+      }
+
+      const activeSubscription = await storage.getActiveSubscriptionByUserId(userId);
+      if (!activeSubscription) {
         return res.status(404).json({ 
           message: "No active subscription found",
           code: "NO_SUBSCRIPTION"
         });
       }
 
-      const subscription = await stripe.subscriptions.update(user.stripeSubscriptionId, {
-        cancel_at_period_end: cancelAtPeriodEnd
+      // Update local subscription record
+      await storage.updateSubscription(activeSubscription.id, {
+        cancelAtPeriodEnd: cancelAtPeriodEnd,
+        canceledAt: cancelAtPeriodEnd ? new Date() : null
       });
 
-      // Update local subscription record
-      const localSubscription = await storage.getActiveSubscriptionByUserId(userId);
-      if (localSubscription) {
-        await storage.updateSubscription(localSubscription.id, {
-          cancelAtPeriodEnd: cancelAtPeriodEnd,
-          canceledAt: cancelAtPeriodEnd ? new Date() : null
-        });
+      // If canceling immediately, downgrade to Free plan
+      if (!cancelAtPeriodEnd) {
+        await storage.updateUserPlan(userId, 'Free', 'active');
       }
 
       res.json({ 
         success: true, 
-        cancelAtPeriodEnd: subscription.cancel_at_period_end,
-        currentPeriodEnd: new Date(subscription.current_period_end * 1000)
+        cancelAtPeriodEnd,
+        currentPeriodEnd: activeSubscription.currentPeriodEnd,
+        message: cancelAtPeriodEnd 
+          ? "Subscription will be cancelled at the end of current period" 
+          : "Subscription cancelled immediately"
       });
     } catch (error) {
       console.error("Error cancelling subscription:", error);
       res.status(500).json({ 
         message: "Failed to cancel subscription",
         code: "SUBSCRIPTION_CANCEL_FAILED"
+      });
+    }
+  });
+
+  // Check payment status
+  app.get('/api/subscription/payment-status/:merchantTransactionId', isAuthenticated, async (req: any, res) => {
+    try {
+      const { merchantTransactionId } = req.params;
+      
+      const status = await PhonePeService.checkPaymentStatus(merchantTransactionId);
+      
+      res.json({
+        success: true,
+        status,
+        merchantTransactionId
+      });
+    } catch (error) {
+      console.error("Error checking payment status:", error);
+      res.status(500).json({ 
+        message: "Failed to check payment status",
+        code: "STATUS_CHECK_FAILED"
       });
     }
   });

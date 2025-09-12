@@ -281,10 +281,10 @@ export const createSubscriptionSchema = z.object({
   plan: planSchema,
 });
 
-// Valid price ID mappings for security (these would be configured via environment variables)
-export const VALID_PRICE_MAPPINGS: Record<string, string> = {
-  "Premium": process.env.STRIPE_PRICE_ID_PREMIUM || "price_premium_default",
-  "Pro": process.env.STRIPE_PRICE_ID_PRO || "price_pro_default",
+// Valid price mappings for PhonePe (in paise - 1 rupee = 100 paise)
+export const VALID_PRICE_MAPPINGS: Record<string, number> = {
+  "Premium": 49900, // ₹499
+  "Pro": 99900,     // ₹999
 };
 
 // Webhook event validation schema
