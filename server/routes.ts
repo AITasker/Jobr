@@ -1,12 +1,41 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import multer from "multer";
+import rateLimit from "express-rate-limit";
+import passport from "passport";
+import { Strategy as GoogleStrategy } from "passport-google-oauth20";
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./replitAuth";
 import { FileProcessor } from "./fileProcessor";
 import { OpenAIService } from "./openaiService";
 import { JobMatchingService } from "./jobMatchingService";
 import { ApplicationPreparationService } from "./applicationPreparationService";
+import { AuthService } from "./authService";
+import { JwtUtils } from "./jwtUtils";
+import { registerSchema, loginSchema } from "@shared/schema";
+
+// Configure rate limiting for authentication routes
+const authRateLimit = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5, // Limit each IP to 5 requests per windowMs for auth routes
+  message: {
+    message: "Too many authentication attempts. Please try again in 15 minutes.",
+    code: "RATE_LIMIT_EXCEEDED"
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const generalRateLimit = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes  
+  max: 100, // Limit each IP to 100 requests per windowMs for general routes
+  message: {
+    message: "Too many requests. Please try again later.",
+    code: "RATE_LIMIT_EXCEEDED"
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 // Configure multer for file uploads
 const upload = multer({
@@ -30,8 +59,36 @@ const upload = multer({
 });
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Initialize Passport
+  app.use(passport.initialize());
+  
+  // Configure Google OAuth Strategy
+  if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
+    passport.use(new GoogleStrategy({
+      clientID: process.env.GOOGLE_CLIENT_ID,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+      callbackURL: '/api/auth/google/callback'
+    }, async (accessToken, refreshToken, profile, done) => {
+      try {
+        const result = await AuthService.handleGoogleAuth(profile, accessToken);
+        if (result.success && result.user && result.token) {
+          return done(null, { user: result.user, token: result.token });
+        } else {
+          return done(new Error(result.error || 'Google authentication failed'));
+        }
+      } catch (error) {
+        return done(error);
+      }
+    }));
+  } else {
+    console.warn('Google OAuth not configured. Missing GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET.');
+  }
+
   // Auth middleware
   await setupAuth(app);
+
+  // Apply general rate limiting to all routes
+  app.use(generalRateLimit);
 
   // Auth routes
   app.get('/api/auth/user', isAuthenticated, async (req: any, res) => {
@@ -42,6 +99,252 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching user:", error);
       res.status(500).json({ message: "Failed to fetch user" });
+    }
+  });
+
+  // New JWT-based authentication routes
+  app.post('/api/auth/register', authRateLimit, async (req: any, res) => {
+    try {
+      // Validate input
+      const validationResult = registerSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({
+          message: "Invalid input data",
+          errors: validationResult.error.errors,
+          code: "VALIDATION_ERROR"
+        });
+      }
+
+      // Register user
+      const result = await AuthService.register(validationResult.data);
+      
+      if (result.success && result.user && result.token) {
+        // Set JWT cookie
+        JwtUtils.setTokenCookie(res, result.token);
+        
+        res.status(201).json({
+          success: true,
+          user: {
+            id: result.user.id,
+            email: result.user.email,
+            firstName: result.user.firstName,
+            lastName: result.user.lastName,
+            plan: result.user.plan,
+            creditsRemaining: result.user.creditsRemaining
+          },
+          emailVerificationRequired: result.emailVerificationRequired,
+          message: "Registration successful"
+        });
+      } else {
+        res.status(400).json({
+          message: result.error || "Registration failed",
+          code: result.code || "REGISTRATION_FAILED"
+        });
+      }
+    } catch (error) {
+      console.error("Registration error:", error);
+      res.status(500).json({
+        message: "Internal server error during registration",
+        code: "INTERNAL_ERROR"
+      });
+    }
+  });
+
+  app.post('/api/auth/login', authRateLimit, async (req: any, res) => {
+    try {
+      // Validate input
+      const validationResult = loginSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({
+          message: "Invalid input data",
+          errors: validationResult.error.errors,
+          code: "VALIDATION_ERROR"
+        });
+      }
+
+      // Login user
+      const result = await AuthService.login(validationResult.data);
+      
+      if (result.success && result.user && result.token) {
+        // Set JWT cookie
+        JwtUtils.setTokenCookie(res, result.token);
+        
+        res.json({
+          success: true,
+          user: {
+            id: result.user.id,
+            email: result.user.email,
+            firstName: result.user.firstName,
+            lastName: result.user.lastName,
+            plan: result.user.plan,
+            creditsRemaining: result.user.creditsRemaining
+          },
+          message: "Login successful"
+        });
+      } else {
+        res.status(401).json({
+          message: result.error || "Login failed",
+          code: result.code || "LOGIN_FAILED"
+        });
+      }
+    } catch (error) {
+      console.error("Login error:", error);
+      res.status(500).json({
+        message: "Internal server error during login",
+        code: "INTERNAL_ERROR"
+      });
+    }
+  });
+
+  app.get('/api/auth/me', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const user = await storage.getUser(userId);
+      
+      if (!user) {
+        return res.status(404).json({
+          message: "User not found",
+          code: "USER_NOT_FOUND"
+        });
+      }
+
+      // Return just the user object to match useAuth contract expectations
+      res.json(user);
+    } catch (error) {
+      console.error("Error fetching user profile:", error);
+      res.status(500).json({
+        message: "Failed to fetch user profile",
+        code: "INTERNAL_ERROR"
+      });
+    }
+  });
+
+  app.post('/api/auth/logout', async (req: any, res) => {
+    try {
+      // Clear JWT cookie
+      JwtUtils.clearTokenCookie(res);
+      
+      res.json({
+        success: true,
+        message: "Logged out successfully"
+      });
+    } catch (error) {
+      console.error("Logout error:", error);
+      res.status(500).json({
+        message: "Logout failed",
+        code: "INTERNAL_ERROR"
+      });
+    }
+  });
+
+  // Google OAuth routes
+  app.get('/api/auth/google', 
+    authRateLimit,
+    passport.authenticate('google', { 
+      scope: ['profile', 'email'],
+      session: false 
+    })
+  );
+
+  app.get('/api/auth/google/callback',
+    authRateLimit,
+    passport.authenticate('google', { session: false }),
+    async (req: any, res) => {
+      try {
+        const authData = req.user;
+        if (!authData || !authData.user || !authData.token) {
+          return res.redirect('/auth/error?message=Google authentication failed');
+        }
+
+        // Set JWT cookie
+        JwtUtils.setTokenCookie(res, authData.token);
+
+        // Redirect to dashboard on success
+        res.redirect('/dashboard?auth=google');
+      } catch (error) {
+        console.error("Google auth callback error:", error);
+        res.redirect('/auth/error?message=Authentication failed');
+      }
+    }
+  );
+
+  // Phone OTP routes
+  app.post('/api/auth/phone/request', authRateLimit, async (req: any, res) => {
+    try {
+      const { phoneNumber } = req.body;
+      
+      if (!phoneNumber) {
+        return res.status(400).json({
+          message: "Phone number is required",
+          code: "PHONE_REQUIRED"
+        });
+      }
+
+      const result = await AuthService.requestPhoneOTP(phoneNumber);
+      
+      if (result.success) {
+        res.json({
+          success: true,
+          message: result.message,
+          // Only include OTP code in development for testing
+          ...(process.env.NODE_ENV === 'development' && result.code && { otpCode: result.code })
+        });
+      } else {
+        res.status(400).json({
+          message: result.message,
+          code: result.code || "OTP_REQUEST_FAILED"
+        });
+      }
+    } catch (error) {
+      console.error("Phone OTP request error:", error);
+      res.status(500).json({
+        message: "Failed to send OTP",
+        code: "INTERNAL_ERROR"
+      });
+    }
+  });
+
+  app.post('/api/auth/phone/verify', authRateLimit, async (req: any, res) => {
+    try {
+      const { phoneNumber, otpCode, firstName, lastName } = req.body;
+      
+      if (!phoneNumber || !otpCode) {
+        return res.status(400).json({
+          message: "Phone number and OTP code are required",
+          code: "MISSING_FIELDS"
+        });
+      }
+
+      const result = await AuthService.verifyPhoneOTP(phoneNumber, otpCode, firstName, lastName);
+      
+      if (result.success && result.user && result.token) {
+        // Set JWT cookie
+        JwtUtils.setTokenCookie(res, result.token);
+        
+        res.json({
+          success: true,
+          user: {
+            id: result.user.id,
+            email: result.user.email,
+            firstName: result.user.firstName,
+            lastName: result.user.lastName,
+            plan: result.user.plan,
+            creditsRemaining: result.user.creditsRemaining
+          },
+          message: "Phone authentication successful"
+        });
+      } else {
+        res.status(401).json({
+          message: result.error || "Phone verification failed",
+          code: result.code || "VERIFY_FAILED"
+        });
+      }
+    } catch (error) {
+      console.error("Phone OTP verification error:", error);
+      res.status(500).json({
+        message: "Failed to verify OTP",
+        code: "INTERNAL_ERROR"
+      });
     }
   });
 
