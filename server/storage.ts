@@ -5,6 +5,8 @@ import {
   applications,
   apiUsage,
   templates,
+  authAccounts,
+  otpCodes,
   type User,
   type UpsertUser,
   type Cv,
@@ -16,7 +18,11 @@ import {
   type ApiUsage,
   type InsertApiUsage,
   type Template,
-  type InsertTemplate
+  type InsertTemplate,
+  type AuthAccount,
+  type InsertAuthAccount,
+  type OtpCode,
+  type InsertOtpCode
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc } from "drizzle-orm";
@@ -26,6 +32,7 @@ export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
   upsertUser(user: UpsertUser): Promise<User>;
   updateUser(id: string, updates: Partial<User>): Promise<User>;
+  createUser(user: Omit<UpsertUser, 'id'>): Promise<User>;
   
   // CV operations
   createCv(cv: InsertCv): Promise<Cv>;
@@ -53,6 +60,18 @@ export interface IStorage {
   createTemplate(template: InsertTemplate): Promise<Template>;
   getTemplates(type?: string): Promise<Template[]>;
   getDefaultTemplate(type: string): Promise<Template | undefined>;
+  
+  // Auth Account operations
+  createAuthAccount(account: InsertAuthAccount): Promise<AuthAccount>;
+  getAuthAccountByEmail(email: string, provider: string): Promise<AuthAccount | undefined>;
+  getAuthAccountsByUserId(userId: string): Promise<AuthAccount[]>;
+  updateAuthAccount(id: string, updates: Partial<AuthAccount>): Promise<AuthAccount>;
+  
+  // OTP Code operations
+  createOtpCode(otp: InsertOtpCode): Promise<OtpCode>;
+  getOtpCode(target: string, purpose: string): Promise<OtpCode | undefined>;
+  updateOtpCode(id: string, updates: Partial<OtpCode>): Promise<OtpCode>;
+  cleanupExpiredOtpCodes(): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -83,6 +102,11 @@ export class DatabaseStorage implements IStorage {
       .set({ ...updates, updatedAt: new Date() })
       .where(eq(users.id, id))
       .returning();
+    return user;
+  }
+
+  async createUser(userData: Omit<UpsertUser, 'id'>): Promise<User> {
+    const [user] = await db.insert(users).values(userData).returning();
     return user;
   }
 
@@ -222,6 +246,73 @@ export class DatabaseStorage implements IStorage {
       .from(templates)
       .where(and(eq(templates.type, type), eq(templates.isDefault, true)));
     return template;
+  }
+
+  // Auth Account operations
+  async createAuthAccount(accountData: InsertAuthAccount): Promise<AuthAccount> {
+    const [account] = await db.insert(authAccounts).values(accountData).returning();
+    return account;
+  }
+
+  async getAuthAccountByEmail(email: string, provider: string): Promise<AuthAccount | undefined> {
+    const [account] = await db
+      .select()
+      .from(authAccounts)
+      .where(and(eq(authAccounts.email, email), eq(authAccounts.provider, provider)));
+    return account;
+  }
+
+  async getAuthAccountsByUserId(userId: string): Promise<AuthAccount[]> {
+    return await db
+      .select()
+      .from(authAccounts)
+      .where(eq(authAccounts.userId, userId))
+      .orderBy(desc(authAccounts.createdAt));
+  }
+
+  async updateAuthAccount(id: string, updates: Partial<AuthAccount>): Promise<AuthAccount> {
+    const [account] = await db
+      .update(authAccounts)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(authAccounts.id, id))
+      .returning();
+    return account;
+  }
+
+  // OTP Code operations
+  async createOtpCode(otpData: InsertOtpCode): Promise<OtpCode> {
+    const [otp] = await db.insert(otpCodes).values(otpData).returning();
+    return otp;
+  }
+
+  async getOtpCode(target: string, purpose: string): Promise<OtpCode | undefined> {
+    const [otp] = await db
+      .select()
+      .from(otpCodes)
+      .where(
+        and(
+          eq(otpCodes.target, target),
+          eq(otpCodes.purpose, purpose),
+          eq(otpCodes.used, false)
+        )
+      )
+      .orderBy(desc(otpCodes.createdAt));
+    return otp;
+  }
+
+  async updateOtpCode(id: string, updates: Partial<OtpCode>): Promise<OtpCode> {
+    const [otp] = await db
+      .update(otpCodes)
+      .set(updates)
+      .where(eq(otpCodes.id, id))
+      .returning();
+    return otp;
+  }
+
+  async cleanupExpiredOtpCodes(): Promise<void> {
+    await db
+      .delete(otpCodes)
+      .where(eq(otpCodes.expiresAt, new Date()));
   }
 }
 

@@ -114,11 +114,55 @@ export const templates = pgTable("templates", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// Authentication accounts table for multi-provider auth
+export const authAccounts = pgTable("auth_accounts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  provider: varchar("provider").notNull(), // 'email', 'replit', 'google', etc.
+  providerUserId: varchar("provider_user_id"), // External provider's user ID
+  email: varchar("email"),
+  phone: varchar("phone"),
+  passwordHash: varchar("password_hash"), // For email/password auth
+  verified: boolean("verified").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_auth_accounts_user_id").on(table.userId),
+  index("idx_auth_accounts_provider").on(table.provider),
+  index("idx_auth_accounts_email").on(table.email),
+  unique("unique_provider_account").on(table.provider, table.providerUserId),
+  unique("unique_email_provider").on(table.email, table.provider),
+]);
+
+// OTP codes table for verification
+export const otpCodes = pgTable("otp_codes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  target: varchar("target").notNull(), // email or phone number
+  sentTo: varchar("sent_to").notNull(), // normalized email/phone
+  codeHash: varchar("code_hash").notNull(), // hashed OTP code
+  purpose: varchar("purpose").notNull(), // 'email_verification', 'password_reset', 'login'
+  expiresAt: timestamp("expires_at").notNull(),
+  attempts: integer("attempts").default(0).notNull(),
+  used: boolean("used").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_otp_codes_target").on(table.target),
+  index("idx_otp_codes_expires_at").on(table.expiresAt),
+]);
+
 // Relations
 export const usersRelations = relations(users, ({ many }) => ({
   cvs: many(cvs),
   applications: many(applications),
   apiUsage: many(apiUsage),
+  authAccounts: many(authAccounts),
+}));
+
+export const authAccountsRelations = relations(authAccounts, ({ one }) => ({
+  user: one(users, {
+    fields: [authAccounts.userId],
+    references: [users.id],
+  }),
 }));
 
 export const cvsRelations = relations(cvs, ({ one }) => ({
@@ -157,6 +201,21 @@ export const insertJobSchema = createInsertSchema(jobs).omit({ id: true, created
 export const insertApplicationSchema = createInsertSchema(applications).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertApiUsageSchema = createInsertSchema(apiUsage).omit({ id: true, createdAt: true });
 export const insertTemplateSchema = createInsertSchema(templates).omit({ id: true, createdAt: true });
+export const insertAuthAccountSchema = createInsertSchema(authAccounts).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertOtpCodeSchema = createInsertSchema(otpCodes).omit({ id: true, createdAt: true });
+
+// Additional auth-specific schemas
+export const registerSchema = z.object({
+  email: z.string().email("Please enter a valid email address"),
+  password: z.string().min(8, "Password must be at least 8 characters").max(100, "Password too long"),
+  firstName: z.string().min(1, "First name is required").max(50, "First name too long"),
+  lastName: z.string().min(1, "Last name is required").max(50, "Last name too long"),
+});
+
+export const loginSchema = z.object({
+  email: z.string().email("Please enter a valid email address"),
+  password: z.string().min(1, "Password is required"),
+});
 
 // Types
 export type UpsertUser = typeof users.$inferInsert;
@@ -171,3 +230,9 @@ export type InsertApiUsage = z.infer<typeof insertApiUsageSchema>;
 export type ApiUsage = typeof apiUsage.$inferSelect;
 export type InsertTemplate = z.infer<typeof insertTemplateSchema>;
 export type Template = typeof templates.$inferSelect;
+export type InsertAuthAccount = z.infer<typeof insertAuthAccountSchema>;
+export type AuthAccount = typeof authAccounts.$inferSelect;
+export type InsertOtpCode = z.infer<typeof insertOtpCodeSchema>;
+export type OtpCode = typeof otpCodes.$inferSelect;
+export type RegisterData = z.infer<typeof registerSchema>;
+export type LoginData = z.infer<typeof loginSchema>;

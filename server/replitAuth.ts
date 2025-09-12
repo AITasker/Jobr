@@ -134,15 +134,48 @@ export async function setupAuth(app: Express) {
   });
 }
 
-export const isAuthenticated: RequestHandler = async (req, res, next) => {
+export const isAuthenticated: RequestHandler = async (req: any, res, next) => {
+  // Import JWT utilities dynamically to avoid circular dependencies
+  const { JwtUtils } = await import('./jwtUtils');
+  const { storage } = await import('./storage');
+
+  // First, try JWT authentication from cookies
+  const jwtPayload = JwtUtils.getPayloadFromRequest(req);
+  if (jwtPayload && !JwtUtils.isTokenExpired(jwtPayload)) {
+    try {
+      // Get user data for JWT authentication
+      const user = await storage.getUser(jwtPayload.userId);
+      if (user) {
+        // Add user info to request for compatibility with existing code
+        req.user = {
+          claims: {
+            sub: user.id,
+            email: user.email,
+            first_name: user.firstName,
+            last_name: user.lastName,
+            profile_image_url: user.profileImageUrl
+          },
+          authMethod: 'jwt'
+        };
+        return next();
+      }
+    } catch (error) {
+      console.error('JWT authentication error:', error);
+      // Fall through to try Replit auth
+    }
+  }
+
+  // Fallback to existing Replit session authentication
   const user = req.user as any;
 
-  if (!req.isAuthenticated() || !user.expires_at) {
+  if (!req.isAuthenticated() || !user?.expires_at) {
     return res.status(401).json({ message: "Unauthorized" });
   }
 
   const now = Math.floor(Date.now() / 1000);
   if (now <= user.expires_at) {
+    // Mark as Replit auth for any code that needs to distinguish
+    user.authMethod = 'replit';
     return next();
   }
 
@@ -156,6 +189,7 @@ export const isAuthenticated: RequestHandler = async (req, res, next) => {
     const config = await getOidcConfig();
     const tokenResponse = await client.refreshTokenGrant(config, refreshToken);
     updateUserSession(user, tokenResponse);
+    user.authMethod = 'replit';
     return next();
   } catch (error) {
     res.status(401).json({ message: "Unauthorized" });
