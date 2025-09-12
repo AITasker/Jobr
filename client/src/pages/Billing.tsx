@@ -69,32 +69,38 @@ export default function Billing() {
     },
   })
 
-  // Create subscription (upgrade)
+  // Create PhonePe payment
   const createSubscription = useMutation({
-    mutationFn: async ({ plan, priceId }: { plan: string, priceId: string }) => {
-      const response = await apiRequest('POST', '/api/subscription/create', { plan, priceId })
+    mutationFn: async ({ plan }: { plan: string }) => {
+      const response = await apiRequest('POST', '/api/subscription/create', { plan })
       const data = await response.json()
       return data
     },
     onSuccess: (data) => {
-      // Redirect to Stripe Checkout
-      if (data.sessionUrl) {
-        window.location.href = data.sessionUrl
+      // Redirect to PhonePe Checkout
+      if (data.success && data.paymentUrl) {
+        window.location.href = data.paymentUrl
+      } else {
+        toast({
+          title: "Payment Setup Error",
+          description: data.message || "Failed to initialize payment",
+          variant: "destructive",
+        })
       }
     },
     onError: () => {
       toast({
         title: "Error",
-        description: "Failed to start subscription. Please try again.",
+        description: "Failed to start payment. Please try again.",
         variant: "destructive",
       })
     },
   })
 
-  const handleUpgrade = async (plan: string, priceId: string) => {
+  const handleUpgrade = async (plan: string) => {
     setIsLoading(true)
     try {
-      await createSubscription.mutateAsync({ plan, priceId })
+      await createSubscription.mutateAsync({ plan })
     } finally {
       setIsLoading(false)
     }
@@ -210,30 +216,30 @@ export default function Billing() {
             {currentPlan === 'Free' && (
               <>
                 <Button 
-                  onClick={() => handleUpgrade('Premium', 'price_premium_monthly')}
+                  onClick={() => handleUpgrade('Premium')}
                   disabled={isLoading}
                   data-testid="button-upgrade-premium"
                 >
-                  Upgrade to Premium ($19/month)
+                  Upgrade to Premium (₹499/month)
                 </Button>
                 <Button 
                   variant="outline"
-                  onClick={() => handleUpgrade('Pro', 'price_pro_monthly')}
+                  onClick={() => handleUpgrade('Pro')}
                   disabled={isLoading}
                   data-testid="button-upgrade-pro"
                 >
-                  Upgrade to Pro ($49/month)
+                  Upgrade to Pro (₹999/month)
                 </Button>
               </>
             )}
             {currentPlan === 'Premium' && (
               <>
                 <Button 
-                  onClick={() => handleUpgrade('Pro', 'price_pro_monthly')}
+                  onClick={() => handleUpgrade('Pro')}
                   disabled={isLoading}
                   data-testid="button-upgrade-pro"
                 >
-                  Upgrade to Pro ($49/month)
+                  Upgrade to Pro (₹999/month)
                 </Button>
                 <Button 
                   variant="outline"
