@@ -12,7 +12,7 @@ import { JobMatchingService } from "./jobMatchingService";
 import { ApplicationPreparationService } from "./applicationPreparationService";
 import { AuthService } from "./authService";
 import { JwtUtils } from "./jwtUtils";
-import { registerSchema, loginSchema } from "@shared/schema";
+import { registerSchema, loginSchema, insertJobSchema, insertApplicationSchema } from "@shared/schema";
 
 // Configure rate limiting for authentication routes
 const authRateLimit = rateLimit({
@@ -484,6 +484,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.post('/api/jobs', isAuthenticated, async (req: any, res) => {
+    try {
+      // Validate input data
+      const validationResult = insertJobSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({
+          message: "Invalid job data",
+          errors: validationResult.error.errors,
+          code: "VALIDATION_ERROR"
+        });
+      }
+
+      const job = await storage.createJob(validationResult.data);
+      res.status(201).json(job);
+    } catch (error) {
+      console.error("Error creating job:", error);
+      
+      // Handle database constraint violations
+      if (error instanceof Error && (
+        error.message.includes('duplicate') || 
+        error.message.includes('unique') ||
+        error.message.includes('constraint')
+      )) {
+        return res.status(409).json({ 
+          message: "Job already exists or violates constraints",
+          code: "CONSTRAINT_VIOLATION"
+        });
+      }
+      
+      res.status(500).json({ 
+        message: "Failed to create job",
+        code: "INTERNAL_ERROR"
+      });
+    }
+  });
+
   app.get('/api/jobs/:id', isAuthenticated, async (req: any, res) => {
     try {
       const job = await storage.getJobById(req.params.id);
@@ -671,21 +707,45 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/applications', isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
-      const { jobId, matchScore } = req.body;
       
-      // TODO: Implement AI-powered CV tailoring and cover letter generation
-      const application = await storage.createApplication({
-        userId,
-        jobId,
-        matchScore,
-        status: 'applied',
-        emailOpened: false,
-      });
+      // Validate input data
+      const validationResult = insertApplicationSchema.safeParse({ ...req.body, userId });
+      if (!validationResult.success) {
+        return res.status(400).json({
+          message: "Invalid application data",
+          errors: validationResult.error.errors,
+          code: "VALIDATION_ERROR"
+        });
+      }
 
-      res.json(application);
+      const applicationData = validationResult.data;
+      
+      // Ensure required fields have defaults
+      if (!applicationData.status) applicationData.status = 'applied';
+      if (applicationData.emailOpened === undefined) applicationData.emailOpened = false;
+      if (!applicationData.matchScore && applicationData.matchScore !== 0) applicationData.matchScore = 50;
+      
+      const application = await storage.createApplication(applicationData);
+      res.status(201).json(application);
     } catch (error) {
       console.error("Error creating application:", error);
-      res.status(500).json({ message: "Failed to create application" });
+      
+      // Handle database constraint violations (duplicate applications)
+      if (error instanceof Error && (
+        error.message.includes('duplicate') || 
+        error.message.includes('unique') ||
+        error.message.includes('constraint')
+      )) {
+        return res.status(409).json({ 
+          message: "Application already exists for this job",
+          code: "DUPLICATE_APPLICATION"
+        });
+      }
+      
+      res.status(500).json({ 
+        message: "Failed to create application",
+        code: "INTERNAL_ERROR"
+      });
     }
   });
 
@@ -693,23 +753,93 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const userId = req.user.claims.sub;
       const applications = await storage.getApplicationsByUserId(userId);
-      res.json(applications);
+      
+      // Get job details for each application
+      const applicationsWithJobs = await Promise.all(
+        applications.map(async (app) => {
+          const job = await storage.getJobById(app.jobId);
+          return {
+            ...app,
+            job
+          };
+        })
+      );
+      
+      res.json(applicationsWithJobs);
     } catch (error) {
       console.error("Error fetching applications:", error);
-      res.status(500).json({ message: "Failed to fetch applications" });
+      res.status(500).json({ 
+        message: "Failed to fetch applications",
+        code: "INTERNAL_ERROR"
+      });
     }
   });
 
   app.put('/api/applications/:id', isAuthenticated, async (req: any, res) => {
     try {
       const { id } = req.params;
+      const userId = req.user.claims.sub;
       const updates = req.body;
       
-      const application = await storage.updateApplication(id, updates);
+      // First verify the application belongs to the user
+      const existingApplication = await storage.getApplicationWithJob(id);
+      if (!existingApplication || existingApplication.userId !== userId) {
+        return res.status(404).json({ 
+          message: "Application not found",
+          code: "APPLICATION_NOT_FOUND"
+        });
+      }
+      
+      // Validate update data (partial validation)
+      const allowedUpdates = ['status', 'notes', 'interviewDate', 'tailoredCv', 'coverLetter', 'preparationStatus', 'preparationMetadata'];
+      const filteredUpdates: any = {};
+      
+      for (const [key, value] of Object.entries(updates)) {
+        if (allowedUpdates.includes(key)) {
+          filteredUpdates[key] = value;
+        }
+      }
+      
+      const application = await storage.updateApplication(id, filteredUpdates);
       res.json(application);
     } catch (error) {
       console.error("Error updating application:", error);
-      res.status(500).json({ message: "Failed to update application" });
+      
+      // Handle database constraint violations
+      if (error instanceof Error && (
+        error.message.includes('duplicate') || 
+        error.message.includes('unique') ||
+        error.message.includes('constraint')
+      )) {
+        return res.status(409).json({ 
+          message: "Update violates constraints",
+          code: "CONSTRAINT_VIOLATION"
+        });
+      }
+      
+      res.status(500).json({ 
+        message: "Failed to update application",
+        code: "INTERNAL_ERROR"
+      });
+    }
+  });
+
+  app.delete('/api/applications/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const userId = req.user.claims.sub;
+      
+      // First verify the application belongs to the user
+      const application = await storage.getApplicationWithJob(id);
+      if (!application || application.userId !== userId) {
+        return res.status(404).json({ message: "Application not found" });
+      }
+      
+      await storage.deleteApplication(id);
+      res.json({ message: "Application deleted successfully" });
+    } catch (error) {
+      console.error("Error deleting application:", error);
+      res.status(500).json({ message: "Failed to delete application" });
     }
   });
 
