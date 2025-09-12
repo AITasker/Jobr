@@ -2,8 +2,17 @@ import express, { type Request, Response, NextFunction } from "express";
 import cookieParser from "cookie-parser";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
+import { StripeWebhookService } from "./stripe";
 
 const app = express();
+
+// CRITICAL: Register Stripe webhook BEFORE body parsers
+// Stripe webhooks need raw body data for signature verification
+app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), (req, res) => {
+  StripeWebhookService.handleWebhook(req, res);
+});
+
+// Body parsers come AFTER webhook registration
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());
