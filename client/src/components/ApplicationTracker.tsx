@@ -4,7 +4,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
 import { ApplicationPreparationModal } from '@/components/ApplicationPreparationModal'
-import { Building2, Calendar, ExternalLink, Mail, MailOpen, Zap } from 'lucide-react'
+import { Building2, Calendar, ExternalLink, Mail, MailOpen, Zap, Edit } from 'lucide-react'
 
 interface Application {
   id: string
@@ -34,9 +34,10 @@ interface Application {
 interface ApplicationTrackerProps {
   applications: Application[]
   onViewDetails?: (applicationId: string) => void
+  onEditApplication?: (application: Application) => void
 }
 
-export function ApplicationTracker({ applications, onViewDetails }: ApplicationTrackerProps) {
+export function ApplicationTracker({ applications, onViewDetails, onEditApplication }: ApplicationTrackerProps) {
   const [selectedApplication, setSelectedApplication] = useState<Application | null>(null)
   const [isPreparationModalOpen, setIsPreparationModalOpen] = useState(false)
   const getStatusColor = (status: Application['status']) => {
@@ -208,6 +209,16 @@ export function ApplicationTracker({ applications, onViewDetails }: ApplicationT
                 >
                   <ExternalLink className="h-3 w-3" />
                   View Details
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onEditApplication?.(app)}
+                  className="flex items-center gap-2"
+                  data-testid={`button-edit-application-${app.id}`}
+                >
+                  <Edit className="h-3 w-3" />
+                  Edit
                 </Button>
                 <Button
                   variant={app.preparationStatus === 'ready' ? "secondary" : "default"}

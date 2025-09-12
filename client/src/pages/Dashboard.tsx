@@ -5,6 +5,8 @@ import { useAuth } from '@/hooks/useAuth'
 import { CVUpload } from '@/components/CVUpload'
 import { JobCard } from '@/components/JobCard'
 import { ApplicationTracker } from '@/components/ApplicationTracker'
+import { AddApplicationModal } from '@/components/AddApplicationModal'
+import { EditApplicationModal } from '@/components/EditApplicationModal'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
@@ -14,7 +16,37 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { apiRequest, queryClient } from '@/lib/queryClient'
 import { useToast } from '@/hooks/use-toast'
-import { Search, Filter, Briefcase, Target, FileText, Loader2, AlertCircle } from 'lucide-react'
+import { Search, Filter, Briefcase, Target, FileText, Loader2, AlertCircle, Plus } from 'lucide-react'
+import type { Application as DatabaseApplication } from '@shared/schema'
+
+// Extended application type that includes job details for the UI
+interface ApplicationWithJob {
+  id: string
+  jobId: string
+  userId: string
+  jobTitle: string
+  company: string
+  appliedDate: string
+  status: 'applied' | 'viewed' | 'interviewing' | 'offered' | 'rejected'
+  matchScore: number
+  emailOpened: boolean
+  interviewDate?: string
+  notes?: string
+  preparationStatus?: 'pending' | 'preparing' | 'ready' | 'failed'
+  coverLetter?: string
+  tailoredCv?: string
+  preparationMetadata?: any
+  job: {
+    id: string
+    title: string
+    company: string
+    location: string
+    type: string
+    description: string
+    requirements: string[]
+    salary?: string
+  }
+}
 
 export default function Dashboard() {
   const { user, isAuthenticated, isLoading } = useAuth()
@@ -42,6 +74,9 @@ export default function Dashboard() {
   const [typeFilter, setTypeFilter] = useState('')
   const [activeTab, setActiveTab] = useState('matched')
   const [cvUploaded, setCvUploaded] = useState(false)
+  const [isAddApplicationModalOpen, setIsAddApplicationModalOpen] = useState(false)
+  const [selectedApplication, setSelectedApplication] = useState<ApplicationWithJob | null>(null)
+  const [isEditApplicationModalOpen, setIsEditApplicationModalOpen] = useState(false)
 
   // Check if user has a CV uploaded
   const { data: cvData, isLoading: cvLoading } = useQuery({
@@ -58,7 +93,7 @@ export default function Dashboard() {
   })
 
   // Get all applications
-  const { data: applications, isLoading: applicationsLoading } = useQuery({
+  const { data: applications, isLoading: applicationsLoading } = useQuery<ApplicationWithJob[]>({
     queryKey: ['/api/applications'],
     enabled: isAuthenticated,
     retry: false
@@ -126,8 +161,11 @@ export default function Dashboard() {
         id: 'job-1',
         title: 'Senior Frontend Developer',
         company: 'TechCorp Solutions',
+        location: 'Bangalore, India',
+        type: 'Full-time',
         description: 'We are looking for an experienced Frontend Developer to join our dynamic team.',
-        requirements: ['React', 'TypeScript', 'Tailwind CSS', 'Node.js', '5+ years experience']
+        requirements: ['React', 'TypeScript', 'Tailwind CSS', 'Node.js', '5+ years experience'],
+        salary: '₹15-25 LPA'
       }
     },
     {
@@ -145,6 +183,8 @@ export default function Dashboard() {
         id: 'job-2',
         title: 'Product Designer',
         company: 'Design Studio',
+        location: 'Mumbai, India',
+        type: 'Contract',
         description: 'Join our creative team to design intuitive user experiences for mobile and web applications.',
         requirements: ['Figma', 'UI/UX Design', 'Prototyping', 'User Research']
       }
@@ -163,8 +203,11 @@ export default function Dashboard() {
         id: 'job-3',
         title: 'Full Stack Engineer',
         company: 'StartupXYZ',
+        location: 'Remote',
+        type: 'Full-time',
         description: 'Build scalable web applications using modern technologies in a fast-paced startup environment.',
-        requirements: ['React', 'Node.js', 'MongoDB', 'AWS', '3+ years experience']
+        requirements: ['React', 'Node.js', 'MongoDB', 'AWS', '3+ years experience'],
+        salary: '₹12-20 LPA'
       }
     }
   ]
@@ -307,9 +350,65 @@ export default function Dashboard() {
           </TabsContent>
 
           <TabsContent value="applications" className="space-y-6">
-            <ApplicationTracker applications={mockApplications} />
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="flex items-center gap-2">
+                    <Briefcase className="h-5 w-5" />
+                    Your Applications
+                  </CardTitle>
+                  <Button
+                    onClick={() => setIsAddApplicationModalOpen(true)}
+                    className="flex items-center gap-2"
+                    data-testid="button-add-application"
+                  >
+                    <Plus className="h-4 w-4" />
+                    Add Application
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {mockApplications && mockApplications.length > 0 ? (
+                  <ApplicationTracker 
+                    applications={mockApplications}
+                    onEditApplication={(app) => {
+                      setSelectedApplication(app as ApplicationWithJob)
+                      setIsEditApplicationModalOpen(true)
+                    }}
+                  />
+                ) : (
+                  <div className="text-center py-8">
+                    <Briefcase className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+                    <h3 className="text-lg font-medium text-foreground mb-2">No Applications Yet</h3>
+                    <p className="text-muted-foreground mb-4">
+                      Start tracking your job applications to monitor your progress
+                    </p>
+                    <Button
+                      onClick={() => setIsAddApplicationModalOpen(true)}
+                      className="flex items-center gap-2"
+                      data-testid="button-add-first-application"
+                    >
+                      <Plus className="h-4 w-4" />
+                      Add Your First Application
+                    </Button>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           </TabsContent>
         </Tabs>
+
+        {/* Modals */}
+        <AddApplicationModal
+          isOpen={isAddApplicationModalOpen}
+          onOpenChange={setIsAddApplicationModalOpen}
+        />
+        
+        <EditApplicationModal
+          application={selectedApplication}
+          isOpen={isEditApplicationModalOpen}
+          onOpenChange={setIsEditApplicationModalOpen}
+        />
       </main>
     </div>
   )

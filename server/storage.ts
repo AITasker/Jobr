@@ -48,6 +48,7 @@ export interface IStorage {
   createApplication(application: InsertApplication): Promise<Application>;
   getApplicationsByUserId(userId: string): Promise<Application[]>;
   updateApplication(id: string, updates: Partial<Application>): Promise<Application>;
+  deleteApplication(id: string): Promise<void>;
   getApplicationWithJob(id: string): Promise<(Application & { job: Job }) | undefined>;
   checkExistingApplication(userId: string, jobId: string): Promise<Application | undefined>;
   
@@ -162,6 +163,10 @@ export class DatabaseStorage implements IStorage {
       .where(eq(applications.id, id))
       .returning();
     return application;
+  }
+
+  async deleteApplication(id: string): Promise<void> {
+    await db.delete(applications).where(eq(applications.id, id));
   }
 
   async getApplicationWithJob(id: string): Promise<(Application & { job: Job }) | undefined> {
