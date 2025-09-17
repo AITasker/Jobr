@@ -1,4 +1,4 @@
-import jobrLogo from '@assets/2025_1758092521629.png'
+import jobrLogo from '@assets/2025-removebg-preview_1758092878943.png'
 
 export function Footer() {
   return (
@@ -8,7 +8,7 @@ export function Footer() {
           {/* Brand */}
           <div className="space-y-4">
             <div className="flex items-center gap-3 mb-2">
-              <img src={jobrLogo} alt="Jobr Logo" className="h-20 w-auto bg-white/10 rounded-lg p-2" />
+              <img src={jobrLogo} alt="Jobr Logo" className="h-20 w-auto" />
               <span className="text-muted-foreground text-xl">-</span>
               <span className="text-xl font-medium text-foreground">Your Career Compass</span>
             </div>
