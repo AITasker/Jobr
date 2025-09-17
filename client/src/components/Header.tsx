@@ -38,7 +38,7 @@ export function Header({ showAuth = true }: HeaderProps) {
         <div className="flex items-center justify-between">
           {/* Logo */}
           <div className="flex items-center gap-2">
-            <img src={jobrLogo} alt="Jobr Logo" className="h-8 w-auto" />
+            <img src={jobrLogo} alt="Jobr Logo" className="h-12 w-auto" />
           </div>
 
           {/* Navigation */}
