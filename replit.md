@@ -1,8 +1,8 @@
-# Career Co-Pilot
+# Jobr
 
 ## Overview
 
-Career Co-Pilot is an AI-powered job search platform that automates the entire application process for job seekers. The application transforms the traditional manual job search from a 2-4 hour per application process into a streamlined, intelligent workflow. Users upload their CV once, receive AI-matched job opportunities, and can apply with automatically tailored CVs and cover letters. The platform includes comprehensive application tracking with email open monitoring and interview preparation features.
+Jobr is an AI-powered job search platform that automates the entire application process for job seekers. The application transforms the traditional manual job search from a 2-4 hour per application process into a streamlined, intelligent workflow. Users upload their CV once, receive AI-matched job opportunities, and can apply with automatically tailored CVs and cover letters. The platform includes comprehensive application tracking with email open monitoring and interview preparation features.
 
 ## User Preferences
 
