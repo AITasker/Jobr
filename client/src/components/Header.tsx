@@ -37,8 +37,10 @@ export function Header({ showAuth = true }: HeaderProps) {
       <div className="container mx-auto px-4 py-3">
         <div className="flex items-center justify-between">
           {/* Logo */}
-          <div className="flex items-center gap-2">
-            <img src={jobrLogo} alt="Jobr Logo" className="h-12 w-auto" />
+          <div className="flex items-center gap-3">
+            <img src={jobrLogo} alt="Jobr Logo" className="h-16 w-auto bg-white/10 rounded-lg p-2" />
+            <span className="text-muted-foreground text-lg hidden sm:inline">-</span>
+            <span className="text-lg font-medium text-foreground hidden sm:inline">Your Career Compass</span>
           </div>
 
           {/* Navigation */}

@@ -7,8 +7,10 @@ export function Footer() {
         <div className="grid gap-8 md:grid-cols-4">
           {/* Brand */}
           <div className="space-y-4">
-            <div className="flex items-center gap-2">
-              <img src={jobrLogo} alt="Jobr Logo" className="h-16 w-auto" />
+            <div className="flex items-center gap-3 mb-2">
+              <img src={jobrLogo} alt="Jobr Logo" className="h-20 w-auto bg-white/10 rounded-lg p-2" />
+              <span className="text-muted-foreground text-xl">-</span>
+              <span className="text-xl font-medium text-foreground">Your Career Compass</span>
             </div>
             <p className="text-sm text-muted-foreground">
               Your career compass - Navigate to your dream job with AI-powered precision.
