@@ -1,4 +1,4 @@
-import { Briefcase } from 'lucide-react'
+import jobrLogo from '@assets/2025_1758092521629.png'
 
 export function Footer() {
   return (
@@ -8,11 +8,10 @@ export function Footer() {
           {/* Brand */}
           <div className="space-y-4">
             <div className="flex items-center gap-2">
-              <Briefcase className="h-6 w-6 text-primary" />
-              <span className="text-xl font-bold text-foreground">Career Co-Pilot</span>
+              <img src={jobrLogo} alt="Jobr Logo" className="h-8 w-auto" />
             </div>
             <p className="text-sm text-muted-foreground">
-              Your AI-powered partner for landing your dream job faster and smarter.
+              Your career compass - Navigate to your dream job with AI-powered precision.
             </p>
           </div>
 
@@ -52,7 +51,7 @@ export function Footer() {
 
         <div className="mt-12 pt-8 border-t flex flex-col md:flex-row items-center justify-between gap-4">
           <p className="text-sm text-muted-foreground">
-            © 2024 Career Co-Pilot. All rights reserved.
+            © 2024 Jobr. All rights reserved.
           </p>
           <p className="text-sm text-muted-foreground">
             Made with ❤️ for job seekers everywhere

@@ -34,15 +34,14 @@ export function Hero() {
 
           {/* Main Heading */}
           <h1 className="text-4xl font-bold tracking-tight text-foreground sm:text-6xl lg:text-7xl">
-            Your AI-Powered
-            <span className="bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent"> Job Search</span>
-            Partner
+            Your
+            <span className="bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent"> Career Compass</span>
           </h1>
 
           {/* Description */}
           <p className="mx-auto mt-6 max-w-2xl text-lg text-muted-foreground sm:text-xl">
-            Stop the manual grind. Transform your job search with AI that matches you with perfect roles, 
-            tailors your applications, and tracks your progress—all in minutes, not hours.
+            Navigate to your dream job with precision. AI-powered job matching, automated applications, 
+            and smart tracking—your personal career compass for landing the perfect role.
           </p>
 
           {/* Stats */}
