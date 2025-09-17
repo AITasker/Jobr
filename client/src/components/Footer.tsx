@@ -1,4 +1,4 @@
-import jobrLogo from '@assets/2025-removebg-preview_1758092878943.png'
+import jobrLogo from '@assets/2025-removebg-preview_1758092942885.png'
 
 export function Footer() {
   return (
@@ -7,10 +7,8 @@ export function Footer() {
         <div className="grid gap-8 md:grid-cols-4">
           {/* Brand */}
           <div className="space-y-4">
-            <div className="flex items-center gap-3 mb-2">
-              <img src={jobrLogo} alt="Jobr Logo" className="h-20 w-auto" />
-              <span className="text-muted-foreground text-xl">-</span>
-              <span className="text-xl font-medium text-foreground">Your Career Compass</span>
+            <div className="mb-4">
+              <img src={jobrLogo} alt="Jobr Logo" className="h-16 w-auto" />
             </div>
             <p className="text-sm text-muted-foreground">
               Your career compass - Navigate to your dream job with AI-powered precision.
