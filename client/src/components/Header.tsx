@@ -2,7 +2,7 @@ import { Button } from '@/components/ui/button'
 import { ThemeToggle } from '@/components/ThemeToggle'
 import { useAuth } from '@/hooks/useAuth'
 import { User, Bell } from 'lucide-react'
-import jobrLogo from '@assets/2025-removebg-preview_1758092878943.png'
+import jobrLogo from '@assets/2025-removebg-preview_1758092942885.png'
 import { Badge } from '@/components/ui/badge'
 
 interface HeaderProps {
@@ -37,11 +37,13 @@ export function Header({ showAuth = true }: HeaderProps) {
       <div className="container mx-auto px-4 py-3">
         <div className="flex items-center justify-between">
           {/* Logo */}
-          <div className="flex items-center gap-3">
-            <img src={jobrLogo} alt="Jobr Logo" className="h-16 w-auto" />
-            <span className="text-muted-foreground text-lg hidden sm:inline">-</span>
-            <span className="text-lg font-medium text-foreground hidden sm:inline">Your Career Compass</span>
-          </div>
+          <a href="/" className="flex items-center gap-3 hover:opacity-90 transition-opacity">
+            <img src={jobrLogo} alt="Jobr Logo" className="h-14 w-auto" />
+            <div className="hidden sm:flex items-center gap-2">
+              <span className="text-muted-foreground text-base">-</span>
+              <span className="text-base font-medium text-foreground">Your Career Compass</span>
+            </div>
+          </a>
 
           {/* Navigation */}
           <nav className="hidden md:flex items-center gap-6">
