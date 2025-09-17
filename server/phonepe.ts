@@ -13,25 +13,20 @@ interface PhonePeConfig {
 // Initialize PhonePe configuration
 let phonePeConfig: PhonePeConfig | null = null;
 
+// Initialize PhonePe with environment variables, using test defaults for development
+phonePeConfig = {
+  merchantId: process.env.PHONEPE_MERCHANT_ID || "PGTESTPAYUAT86",
+  saltKey: process.env.PHONEPE_SALT_KEY || "96434309-7796-489d-8924-ab56988a6076",
+  saltIndex: parseInt(process.env.PHONEPE_SALT_INDEX || "1"),
+  baseUrl: process.env.NODE_ENV === 'production' 
+    ? 'https://api.phonepe.com/apis/hermes' 
+    : 'https://api-preprod.phonepe.com/apis/pg-sandbox'
+};
+
 if (process.env.PHONEPE_MERCHANT_ID && process.env.PHONEPE_SALT_KEY) {
-  phonePeConfig = {
-    merchantId: process.env.PHONEPE_MERCHANT_ID,
-    saltKey: process.env.PHONEPE_SALT_KEY,
-    saltIndex: parseInt(process.env.PHONEPE_SALT_INDEX || "1"),
-    baseUrl: process.env.NODE_ENV === 'production' 
-      ? 'https://api.phonepe.com/apis/hermes' 
-      : 'https://api-preprod.phonepe.com/apis/pg-sandbox'
-  };
-  console.log('PhonePe initialized successfully');
+  console.log('PhonePe initialized with environment credentials');
 } else {
-  // Use test credentials for development
-  phonePeConfig = {
-    merchantId: "PGTESTPAYUAT86",
-    saltKey: "96434309-7796-489d-8924-ab56988a6076",
-    saltIndex: 1,
-    baseUrl: 'https://api-preprod.phonepe.com/apis/pg-sandbox'
-  };
-  console.log('PhonePe initialized with test credentials');
+  console.log('PhonePe initialized with test credentials (set PHONEPE_MERCHANT_ID and PHONEPE_SALT_KEY for production)');
 }
 
 // Price mappings for plans (in paise - 1 rupee = 100 paise)
