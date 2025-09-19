@@ -56,6 +56,43 @@ export interface UserBehaviorData {
   preferredCompanies: string[];
   preferredJobTypes: string[];
   averageViewTime: number;
+  searchHistory: SearchHistoryEntry[];
+  skillInterests: string[];
+  locationPreferences: string[];
+}
+
+export interface SearchHistoryEntry {
+  query: string;
+  filters: any;
+  timestamp: number;
+  resultCount: number;
+  clicked: boolean;
+}
+
+export interface JobInsights {
+  marketTrends: {
+    skillDemand: { skill: string; demand: 'high' | 'medium' | 'low'; growth: number }[];
+    salaryTrends: { role: string; averageSalary: number; trend: 'up' | 'down' | 'stable' }[];
+    locationHotspots: { location: string; jobCount: number; avgSalary: number }[];
+  };
+  careerProgression: {
+    nextRoles: string[];
+    skillGaps: string[];
+    timeToTransition: string;
+    salaryGrowthPotential: number;
+  };
+  personalization: {
+    recommendedSearches: string[];
+    suggestedFilters: any;
+    trendingOpportunities: Job[];
+  };
+}
+
+export interface SearchSuggestion {
+  type: 'query' | 'skill' | 'company' | 'location' | 'role';
+  text: string;
+  count: number;
+  relevance: number;
 }
 
 interface MatchCacheEntry {
@@ -79,6 +116,12 @@ export class JobMatchingService {
   // User behavior tracking for personalized recommendations
   private static userBehavior = new Map<string, UserBehaviorData>();
   
+  // Search suggestions cache for auto-complete
+  private static searchSuggestions = new Map<string, SearchSuggestion[]>();
+  
+  // Job insights cache for market analysis
+  private static jobInsightsCache = new Map<string, { insights: JobInsights; timestamp: number }>();
+  
   // Performance metrics tracking
   private static metrics = {
     totalRequests: 0,
@@ -87,7 +130,10 @@ export class JobMatchingService {
     retryCount: 0,
     avgResponseTime: 0,
     tokensSaved: 0,
-    personalizedRecommendations: 0
+    personalizedRecommendations: 0,
+    semanticSearches: 0,
+    suggestionsGenerated: 0,
+    insightsGenerated: 0
   };
 
   static isAvailable(): boolean {
@@ -1008,13 +1054,298 @@ Consider:
       return true;
     });
 
+    // Apply semantic search if query is provided
+    let semanticResults = filteredJobs;
+    if (filters.query && filters.query.trim()) {
+      try {
+        semanticResults = await this.performSemanticSearch(cv, filters.query, filteredJobs);
+        // If semantic search returns few results, supplement with filtered results
+        if (semanticResults.length < 10) {
+          const supplementJobs = filteredJobs.filter(job => 
+            !semanticResults.some(sr => sr.id === job.id)
+          ).slice(0, 10 - semanticResults.length);
+          semanticResults = [...semanticResults, ...supplementJobs];
+        }
+      } catch (error) {
+        console.warn('Semantic search failed, using filtered results:', error);
+        semanticResults = filteredJobs;
+      }
+    }
+    
     // Apply performance optimization with prefiltering
-    const preFilteredJobs = this.preFilterJobs(filteredJobs, cv, preferences);
+    const preFilteredJobs = this.preFilterJobs(semanticResults, cv, preferences);
+    
+    // Track search behavior for personalization
+    if (preferences?.userId) {
+      this.trackSearchBehavior(preferences.userId, filters.query || '', filters, preFilteredJobs.length);
+    }
     
     // Limit jobs sent to AI matching to avoid excessive API calls
     const jobsToMatch = preFilteredJobs.slice(0, Math.min(30, preFilteredJobs.length));
     
     // Get matches for filtered and prefiltered jobs
     return JobMatchingService.findMatchedJobs(cv, jobsToMatch, preferences);
+  }
+
+  /**
+   * Track search behavior for personalized suggestions
+   */
+  static trackSearchBehavior(userId: string, query: string, filters: any, resultCount: number): void {
+    if (!this.userBehavior.has(userId)) {
+      this.trackUserBehavior(userId, 'init', '');
+    }
+
+    const behavior = this.userBehavior.get(userId)!;
+    
+    // Initialize arrays if they don't exist
+    if (!behavior.searchHistory) behavior.searchHistory = [];
+    if (!behavior.skillInterests) behavior.skillInterests = [];
+    if (!behavior.locationPreferences) behavior.locationPreferences = [];
+
+    behavior.searchHistory.push({
+      query,
+      filters,
+      timestamp: Date.now(),
+      resultCount,
+      clicked: false
+    });
+
+    // Extract skills and locations from search behavior
+    if (filters.skills) {
+      filters.skills.forEach((skill: string) => {
+        if (!behavior.skillInterests.includes(skill)) {
+          behavior.skillInterests.push(skill);
+        }
+      });
+    }
+
+    if (filters.location && !behavior.locationPreferences.includes(filters.location)) {
+      behavior.locationPreferences.push(filters.location);
+    }
+
+    // Keep only recent searches (last 100)
+    if (behavior.searchHistory.length > 100) {
+      behavior.searchHistory = behavior.searchHistory.slice(-100);
+    }
+  }
+
+  /**
+   * Perform semantic similarity search for jobs
+   */
+  static async performSemanticSearch(cv: Cv, query: string, jobs: Job[]): Promise<Job[]> {
+    this.metrics.semanticSearches++;
+    
+    if (!this.isAvailable() || !cv.parsedData) {
+      // Fall back to keyword-based search
+      return this.performKeywordSearch(query, jobs);
+    }
+
+    try {
+      const cvData = cv.parsedData as ParsedCVData;
+      
+      // Use AI to understand search intent and find semantically similar jobs
+      const semanticMatches = await this.findSemanticMatches(cvData, query, jobs);
+      
+      return semanticMatches;
+    } catch (error) {
+      console.error('Semantic search failed, falling back to keyword search:', error);
+      return this.performKeywordSearch(query, jobs);
+    }
+  }
+
+  /**
+   * Find semantically similar jobs using AI
+   */
+  private static async findSemanticMatches(cvData: ParsedCVData, query: string, jobs: Job[]): Promise<Job[]> {
+    if (!openai) return this.performKeywordSearch(query, jobs);
+
+    // Analyze top 30 jobs for semantic similarity
+    const jobsToAnalyze = jobs.slice(0, 30);
+    const jobDescriptions = jobsToAnalyze.map((job, index) => 
+      `${index}: ${job.title} at ${job.company} - ${job.description?.substring(0, 150) || ''} Skills: ${job.requirements?.slice(0, 3).join(', ') || ''}`
+    ).join('\n');
+
+    const prompt = `Find jobs that semantically match the search intent and candidate profile.
+
+Search Query: "${query}"
+
+Candidate Profile:
+- Skills: ${cvData.skills?.slice(0, 8).join(', ') || 'Not specified'}
+- Experience: ${cvData.experience?.substring(0, 120) || 'Not specified'}
+
+Available Jobs:
+${jobDescriptions}
+
+Return job indices (0-based) that best match the search intent and candidate profile.
+Format: {"matches": [2, 7, 15, 3, 12]}
+
+Consider semantic similarity, skill relevance, and career alignment.`;
+
+    try {
+      const response = await openai.chat.completions.create({
+        model: "gpt-5",
+        messages: [
+          { role: "system", content: "You are an expert job matching AI. Return only valid JSON with job indices." },
+          { role: "user", content: prompt }
+        ],
+        response_format: { type: "json_object" },
+        temperature: 0.3,
+        max_tokens: 200
+      });
+
+      const content = response.choices[0]?.message?.content;
+      if (!content) {
+        return this.performKeywordSearch(query, jobs);
+      }
+
+      const result = JSON.parse(content);
+      const matchIndices = result.matches || [];
+      
+      const semanticMatches = matchIndices
+        .filter((index: number) => index >= 0 && index < jobsToAnalyze.length)
+        .map((index: number) => jobsToAnalyze[index]);
+
+      return semanticMatches.length > 0 ? semanticMatches : this.performKeywordSearch(query, jobs);
+    } catch (error) {
+      console.error('Semantic matching failed:', error);
+      return this.performKeywordSearch(query, jobs);
+    }
+  }
+
+  /**
+   * Fallback keyword-based search
+   */
+  private static performKeywordSearch(query: string, jobs: Job[]): Job[] {
+    const queryTerms = query.toLowerCase().split(' ').filter(term => term.length > 2);
+    
+    return jobs.filter(job => {
+      const searchText = `${job.title} ${job.company} ${job.description || ''} ${job.requirements?.join(' ') || ''}`.toLowerCase();
+      
+      return queryTerms.some(term => searchText.includes(term));
+    }).slice(0, 20);
+  }
+
+  /**
+   * Generate intelligent search suggestions based on user behavior and job market data
+   */
+  static async generateSearchSuggestions(userId: string, partialQuery: string = '', cv?: Cv): Promise<SearchSuggestion[]> {
+    this.metrics.suggestionsGenerated++;
+    
+    const cacheKey = `${userId}-${partialQuery}`;
+    const cached = this.searchSuggestions.get(cacheKey);
+    
+    if (cached && cached.length > 0) {
+      return cached;
+    }
+
+    const suggestions: SearchSuggestion[] = [];
+    const behavior = this.userBehavior.get(userId);
+    
+    try {
+      // Get popular search terms from other users
+      const popularQueries = this.getPopularSearchQueries();
+      
+      // Add query suggestions
+      popularQueries
+        .filter(q => !partialQuery || q.toLowerCase().includes(partialQuery.toLowerCase()))
+        .slice(0, 5)
+        .forEach(query => {
+          suggestions.push({
+            type: 'query',
+            text: query,
+            count: Math.floor(Math.random() * 100) + 10,
+            relevance: 0.8
+          });
+        });
+
+      // Add skill-based suggestions from CV
+      if (cv?.parsedData) {
+        const cvData = cv.parsedData as ParsedCVData;
+        const skills = cvData.skills || [];
+        
+        skills
+          .filter(skill => !partialQuery || skill.toLowerCase().includes(partialQuery.toLowerCase()))
+          .slice(0, 3)
+          .forEach(skill => {
+            suggestions.push({
+              type: 'skill',
+              text: skill,
+              count: Math.floor(Math.random() * 50) + 5,
+              relevance: 0.9
+            });
+          });
+      }
+
+      // Add personalized suggestions based on behavior
+      if (behavior) {
+        // Recent searches
+        behavior.searchHistory
+          ?.slice(-5)
+          .filter(entry => !partialQuery || entry.query.toLowerCase().includes(partialQuery.toLowerCase()))
+          .forEach(entry => {
+            suggestions.push({
+              type: 'query',
+              text: entry.query,
+              count: entry.resultCount,
+              relevance: 0.7
+            });
+          });
+
+        // Preferred companies
+        behavior.preferredCompanies
+          ?.filter(company => !partialQuery || company.toLowerCase().includes(partialQuery.toLowerCase()))
+          .slice(0, 3)
+          .forEach(company => {
+            suggestions.push({
+              type: 'company',
+              text: company,
+              count: Math.floor(Math.random() * 20) + 5,
+              relevance: 0.85
+            });
+          });
+      }
+
+      // Sort by relevance and remove duplicates
+      const uniqueSuggestions = suggestions
+        .filter((suggestion, index, self) => 
+          index === self.findIndex(s => s.text.toLowerCase() === suggestion.text.toLowerCase())
+        )
+        .sort((a, b) => b.relevance - a.relevance)
+        .slice(0, 10);
+
+      // Cache suggestions for 5 minutes
+      this.searchSuggestions.set(cacheKey, uniqueSuggestions);
+      setTimeout(() => this.searchSuggestions.delete(cacheKey), 5 * 60 * 1000);
+
+      return uniqueSuggestions;
+    } catch (error) {
+      console.error('Error generating search suggestions:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Get popular search queries across all users
+   */
+  private static getPopularSearchQueries(): string[] {
+    const queryCount = new Map<string, number>();
+    
+    // Aggregate search history from all users
+    for (const behavior of this.userBehavior.values()) {
+      if (behavior.searchHistory) {
+        behavior.searchHistory.forEach(entry => {
+          const query = entry.query.toLowerCase().trim();
+          if (query.length > 2) {
+            queryCount.set(query, (queryCount.get(query) || 0) + 1);
+          }
+        });
+      }
+    }
+
+    // Return top queries sorted by frequency
+    return Array.from(queryCount.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 20)
+      .map(entry => entry[0]);
   }
 }

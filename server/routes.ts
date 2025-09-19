@@ -17,7 +17,7 @@ import { ApplicationPreparationService } from "./applicationPreparationService";
 import { AuthService } from "./authService";
 import { JwtUtils } from "./jwtUtils";
 import { SubscriptionService } from "./subscriptionService";
-import { registerSchema, loginSchema, insertJobSchema, insertApplicationSchema, createSubscriptionSchema, updateSubscriptionSchema, phoneRequestSchema, phoneVerifySchema, jobApplySchema, cvTailorSchema, applicationUpdateSchema, batchPrepareSchema, subscriptionCancelSchema, VALID_PRICE_MAPPINGS } from "@shared/schema";
+import { registerSchema, loginSchema, insertJobSchema, insertApplicationSchema, createSubscriptionSchema, updateSubscriptionSchema, phoneRequestSchema, phoneVerifySchema, jobApplySchema, cvTailorSchema, applicationUpdateSchema, batchPrepareSchema, subscriptionCancelSchema, bookmarkJobSchema, jobSearchSchema, saveSearchSchema, updatePreferencesSchema, VALID_PRICE_MAPPINGS } from "@shared/schema";
 import { createErrorResponse, ERROR_CODES } from "./utils/errorHandler";
 import { addAuthMetricsRoute } from "./authMetricsRoute";
 
@@ -989,6 +989,284 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ 
         message: "Failed to search jobs",
         details: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
+
+  // Job bookmark routes
+  app.post('/api/bookmarks', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      
+      // Validate input data
+      const validationResult = bookmarkJobSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({
+          message: "Invalid bookmark data",
+          errors: validationResult.error.errors,
+          code: "VALIDATION_ERROR"
+        });
+      }
+
+      const { jobId, notes } = validationResult.data;
+
+      // Check if job exists
+      const job = await storage.getJobById(jobId);
+      if (!job) {
+        return res.status(404).json({ 
+          message: "Job not found",
+          code: "JOB_NOT_FOUND"
+        });
+      }
+
+      // Check if already bookmarked
+      const isAlreadyBookmarked = await storage.isJobBookmarked(userId, jobId);
+      if (isAlreadyBookmarked) {
+        return res.status(409).json({
+          message: "Job is already bookmarked",
+          code: "ALREADY_BOOKMARKED"
+        });
+      }
+
+      const bookmark = await storage.createJobBookmark({
+        userId,
+        jobId,
+        notes: notes || null
+      });
+
+      res.status(201).json({
+        success: true,
+        bookmark,
+        message: `${job.title} has been bookmarked`
+      });
+    } catch (error) {
+      console.error("Error creating bookmark:", error);
+      res.status(500).json({
+        message: "Failed to bookmark job",
+        code: "INTERNAL_ERROR"
+      });
+    }
+  });
+
+  app.get('/api/bookmarks', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const bookmarks = await storage.getJobBookmarksByUserId(userId);
+      
+      res.json({
+        success: true,
+        bookmarks,
+        total: bookmarks.length
+      });
+    } catch (error) {
+      console.error("Error fetching bookmarks:", error);
+      res.status(500).json({
+        message: "Failed to fetch bookmarks",
+        code: "INTERNAL_ERROR"
+      });
+    }
+  });
+
+  app.get('/api/bookmarks/check', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { jobId } = req.query;
+
+      if (!jobId || typeof jobId !== 'string') {
+        return res.status(400).json({
+          message: "jobId is required as query parameter",
+          code: "VALIDATION_ERROR"
+        });
+      }
+
+      const isBookmarked = await storage.isJobBookmarked(userId, jobId);
+      
+      res.json({
+        success: true,
+        isBookmarked
+      });
+    } catch (error) {
+      console.error("Error checking bookmark status:", error);
+      res.status(500).json({
+        message: "Failed to check bookmark status",
+        code: "INTERNAL_ERROR"
+      });
+    }
+  });
+
+  app.delete('/api/bookmarks/:jobId', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { jobId } = req.params;
+
+      // Check if bookmark exists
+      const isBookmarked = await storage.isJobBookmarked(userId, jobId);
+      if (!isBookmarked) {
+        return res.status(404).json({
+          message: "Bookmark not found",
+          code: "BOOKMARK_NOT_FOUND"
+        });
+      }
+
+      await storage.deleteJobBookmark(userId, jobId);
+      
+      res.json({
+        success: true,
+        message: "Bookmark removed successfully"
+      });
+    } catch (error) {
+      console.error("Error removing bookmark:", error);
+      res.status(500).json({
+        message: "Failed to remove bookmark",
+        code: "INTERNAL_ERROR"
+      });
+    }
+  });
+
+  // Enhanced search suggestions API
+  app.get('/api/search/suggestions', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const query = (req.query.q as string) || '';
+      
+      // Get user's CV for personalized suggestions
+      const cv = await storage.getCvByUserId(userId);
+      
+      const suggestions = await JobMatchingService.generateSearchSuggestions(userId, query, cv || undefined);
+      
+      res.json({
+        success: true,
+        suggestions,
+        query
+      });
+    } catch (error) {
+      console.error("Error generating search suggestions:", error);
+      res.status(500).json({
+        message: "Failed to generate search suggestions",
+        code: "INTERNAL_ERROR"
+      });
+    }
+  });
+
+  // Job market insights and career recommendations API
+  app.get('/api/jobs/insights', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      
+      // Get user's CV
+      const cv = await storage.getCvByUserId(userId);
+      if (!cv || !cv.parsedData) {
+        return res.status(400).json({
+          message: "Please upload and process your CV before viewing job insights",
+          code: "CV_REQUIRED"
+        });
+      }
+      
+      // Get recent jobs for market analysis
+      const jobs = await storage.getJobs(100);
+      
+      // Generate comprehensive job insights
+      const insights = await JobMatchingService.generateJobInsights(userId, cv, jobs);
+      
+      if (!insights) {
+        return res.status(500).json({
+          message: "Failed to generate job insights",
+          code: "INSIGHTS_GENERATION_FAILED"
+        });
+      }
+      
+      res.json({
+        success: true,
+        insights,
+        timestamp: new Date().toISOString()
+      });
+    } catch (error) {
+      console.error("Error generating job insights:", error);
+      res.status(500).json({
+        message: "Failed to generate job insights", 
+        details: error instanceof Error ? error.message : 'Unknown error',
+        code: "INTERNAL_ERROR"
+      });
+    }
+  });
+
+  // Enhanced job search with semantic capabilities
+  app.get('/api/jobs/search/enhanced', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const cv = await storage.getCvByUserId(userId);
+      
+      if (!cv || !cv.parsedData) {
+        return res.status(400).json({ 
+          message: "Please upload and process your CV before searching for jobs",
+          code: "CV_REQUIRED"
+        });
+      }
+
+      // Get all jobs for enhanced search
+      const allJobs = await storage.getJobs();
+      
+      // Enhanced filters with semantic search support
+      const filters = {
+        query: req.query.q as string,
+        location: req.query.location as string,
+        type: req.query.type as string,
+        minSalary: req.query.minSalary ? parseInt(req.query.minSalary as string) : undefined,
+        maxSalary: req.query.maxSalary ? parseInt(req.query.maxSalary as string) : undefined,
+        skills: req.query.skills ? (req.query.skills as string).split(',') : undefined,
+        experience: req.query.experience as string,
+        remote: req.query.remote === 'true',
+        datePosted: req.query.datePosted as string
+      };
+
+      const preferences = {
+        userId,
+        preferredLocation: req.query.preferredLocation as string,
+        salaryExpectation: req.query.salaryExpectation as string,
+        preferredJobTypes: req.query.preferredTypes ? (req.query.preferredTypes as string).split(',') : undefined
+      };
+
+      // Use enhanced search with semantic capabilities
+      const searchResults = await JobMatchingService.searchJobs(cv, allJobs, filters, preferences);
+      
+      // Get search suggestions for this query
+      const suggestions = filters.query ? 
+        await JobMatchingService.generateSearchSuggestions(userId, filters.query, cv) : [];
+      
+      res.json({
+        success: true,
+        results: searchResults,
+        total: searchResults.length,
+        filters,
+        suggestions: suggestions.slice(0, 5),
+        processingMethod: JobMatchingService.isAvailable() ? 'ai-enhanced' : 'basic',
+        timestamp: new Date().toISOString()
+      });
+    } catch (error) {
+      console.error("Error in enhanced job search:", error);
+      res.status(500).json({ 
+        message: "Failed to perform enhanced search",
+        details: error instanceof Error ? error.message : 'Unknown error',
+        code: "SEARCH_FAILED"
+      });
+    }
+  });
+
+  // Search metrics and analytics API
+  app.get('/api/search/metrics', isAuthenticated, async (req: any, res) => {
+    try {
+      const metrics = JobMatchingService.getMetrics();
+      
+      res.json({
+        success: true,
+        metrics,
+        timestamp: new Date().toISOString()
+      });
+    } catch (error) {
+      console.error("Error fetching search metrics:", error);
+      res.status(500).json({
+        message: "Failed to fetch search metrics",
+        code: "INTERNAL_ERROR"
       });
     }
   });
