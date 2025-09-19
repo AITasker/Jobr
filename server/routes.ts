@@ -17,12 +17,11 @@ import { JobMatchingService } from "./jobMatchingService";
 import { ApplicationPreparationService } from "./applicationPreparationService";
 import { AuthService } from "./authService";
 import { JwtUtils } from "./jwtUtils";
-import { SubscriptionService } from "./subscriptionService";
 import { EmailMonitoringService } from "./emailMonitoringService";
 import { ApplicationLifecycleService } from "./applicationLifecycleService";
 import { NotificationService } from "./notificationService";
 import { AnalyticsService } from "./analyticsService";
-import { registerSchema, loginSchema, insertJobSchema, insertApplicationSchema, createSubscriptionSchema, updateSubscriptionSchema, phoneRequestSchema, phoneVerifySchema, jobApplySchema, cvTailorSchema, applicationUpdateSchema, batchPrepareSchema, subscriptionCancelSchema, bookmarkJobSchema, jobSearchSchema, saveSearchSchema, updatePreferencesSchema, VALID_PRICE_MAPPINGS } from "@shared/schema";
+import { registerSchema, loginSchema, insertJobSchema, insertApplicationSchema, phoneRequestSchema, phoneVerifySchema, jobApplySchema, cvTailorSchema, applicationUpdateSchema, batchPrepareSchema, bookmarkJobSchema, jobSearchSchema, saveSearchSchema, updatePreferencesSchema } from "@shared/schema";
 import { checkDatabaseHealth } from "./db";
 import { createErrorResponse, ERROR_CODES } from "./utils/errorHandler";
 import { addAuthMetricsRoute } from "./authMetricsRoute";
@@ -158,11 +157,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
             usingMock: process.env.NODE_ENV === 'test' || process.env.TEST_USE_MOCKS === 'true',
             realService: !!process.env.SENDGRID_API_KEY
           },
-          stripe: {
-            available: true,
-            usingMock: process.env.NODE_ENV === 'test' || process.env.TEST_USE_MOCKS === 'true',
-            realService: !!process.env.STRIPE_SECRET_KEY
-          },
           phonepe: {
             available: true,
             usingMock: process.env.NODE_ENV === 'test' || process.env.TEST_USE_MOCKS === 'true',
@@ -223,11 +217,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
           features: ['social_login'],
           fallback: 'email_password_login'
         },
-        stripe: {
-          available: !!process.env.STRIPE_SECRET_KEY,
-          features: ['subscription_payments', 'billing_management'],
-          fallback: 'phonepe_payments'
-        },
         phonepe: {
           available: !!(process.env.PHONEPE_MERCHANT_ID && process.env.PHONEPE_SALT_KEY),
           features: ['indian_payments', 'subscription_management'],
@@ -246,7 +235,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         available: Object.values(integrations).filter(i => i.available).length,
         missing: Object.values(integrations).filter(i => !i.available).length,
         core_functional: integrations.openai.available, // Core AI functionality status
-        payments_functional: integrations.stripe.available || integrations.phonepe.available
+        payments_functional: integrations.phonepe.available
       };
 
       res.json({
@@ -256,7 +245,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         recommendations: [
           !integrations.openai.available && "Configure OPENAI_API_KEY for full AI functionality",
           !integrations.google_oauth.available && "Configure Google OAuth for social login",
-          !integrations.stripe.available && !integrations.phonepe.available && "Configure payment provider for subscriptions",
+          !integrations.phonepe.available && "Configure PhonePe for payment processing",
           !integrations.sendgrid.available && "Configure SendGrid for email services"
         ].filter(Boolean)
       });
@@ -1443,17 +1432,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const userId = req.user.claims.sub;
       
-      // Check subscription limits before creating application
-      const canCreate = await SubscriptionService.canUserCreateApplication(userId);
-      if (!canCreate.allowed) {
-        return res.status(403).json({
-          message: canCreate.reason,
-          currentUsage: canCreate.currentUsage,
-          limit: canCreate.limit,
-          requiresUpgrade: true,
-          code: "SUBSCRIPTION_LIMIT_REACHED"
-        });
-      }
       
       // Validate input data
       const validationResult = insertApplicationSchema.safeParse({ ...req.body, userId });
@@ -1474,8 +1452,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const application = await storage.createApplication(applicationData);
       
-      // Record application creation for usage tracking
-      await SubscriptionService.recordApplicationCreated(userId);
       
       res.status(201).json(application);
     } catch (error) {
@@ -1600,15 +1576,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { id } = req.params;
       const userId = req.user.claims.sub;
       
-      // Check AI feature access for preparation
-      const canAccessAI = await SubscriptionService.canUserAccessAIFeatures(userId);
-      if (!canAccessAI.allowed) {
-        return res.status(403).json({
-          message: canAccessAI.reason,
-          requiresUpgrade: canAccessAI.requiresUpgrade,
-          code: "AI_FEATURES_REQUIRED"
-        });
-      }
       
       // Get application with job details
       const applicationWithJob = await storage.getApplicationWithJob(id);
@@ -1932,230 +1899,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Subscription management routes
 
-  // Get usage statistics
-  app.get('/api/subscription/usage', isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const stats = await SubscriptionService.getUserUsageStats(userId);
-      
-      if (!stats) {
-        return res.status(404).json({ message: "User not found" });
-      }
 
-      res.json(stats);
-    } catch (error) {
-      console.error("Error fetching usage stats:", error);
-      res.status(500).json({ message: "Failed to fetch usage statistics" });
-    }
-  });
 
-  // Get current subscription status
-  app.get('/api/subscription', isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      
-      const user = await storage.getUser(userId);
-      if (!user) {
-        return res.status(404).json({ message: "User not found" });
-      }
 
-      const activeSubscription = await storage.getActiveSubscriptionByUserId(userId);
-      
-      res.json({
-        currentPlan: user.plan,
-        subscriptionStatus: user.subscriptionStatus,
-        currentPeriodEnd: user.subscriptionCurrentPeriodEnd,
-        applicationsThisMonth: user.applicationsThisMonth,
-        applicationsLimit: user.plan === 'Free' ? 5 : -1, // -1 means unlimited
-        phonepeCustomerId: user.stripeCustomerId, // Reuse field for PhonePe customer tracking
-        activeSubscription,
-        validPlans: Object.keys(VALID_PRICE_MAPPINGS), // Available upgrade plans
-        pricing: VALID_PRICE_MAPPINGS // Include pricing information
-      });
-    } catch (error) {
-      console.error("Error fetching subscription:", error);
-      res.status(500).json({ message: "Failed to fetch subscription" });
-    }
-  });
 
-  // Create PhonePe payment - SECURE PRICE VALIDATION
-  app.post('/api/subscription/create', isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const validationResult = createSubscriptionSchema.safeParse(req.body);
-      
-      if (!validationResult.success) {
-        return res.status(400).json({
-          message: "Invalid input data",
-          errors: validationResult.error.errors,
-          code: "VALIDATION_ERROR"
-        });
-      }
-
-      const { plan } = validationResult.data;
-      
-      // CRITICAL SECURITY: Server-side price validation - prevent price manipulation
-      const amount = VALID_PRICE_MAPPINGS[plan];
-      if (!amount) {
-        return res.status(400).json({
-          message: `Invalid plan selected: ${plan}`,
-          code: "INVALID_PLAN"
-        });
-      }
-
-      // Priority 1: Payment Idempotency - Generate idempotency key
-      const idempotencyWindow = Math.floor(Date.now() / (5 * 60 * 1000)); // 5-minute window
-      const idempotencyKey = `${userId}_${plan}_${idempotencyWindow}`;
-
-      // Check for existing payment request
-      const existingPayment = await storage.getPaymentRequestByKey(idempotencyKey);
-      if (existingPayment) {
-        return res.json({
-          success: true,
-          paymentUrl: existingPayment.paymentUrl,
-          merchantTransactionId: existingPayment.merchantTransactionId,
-          status: 'existing',
-          message: 'Payment request already exists'
-        });
-      }
-
-      const user = await storage.getUser(userId);
-      
-      if (!user) {
-        return res.status(404).json({ 
-          message: "User not found",
-          code: "USER_NOT_FOUND"
-        });
-      }
-
-      if (!user.email) {
-        return res.status(400).json({ 
-          message: "User email not found",
-          code: "EMAIL_REQUIRED"
-        });
-      }
-
-      // Create PhonePe payment request
-      const redirectUrl = `${req.headers.origin}/dashboard?payment=success`;
-      const paymentResponse = await PhonePeService.createPayment(
-        userId,
-        plan,
-        user.email,
-        redirectUrl
-      );
-
-      if (paymentResponse.success && paymentResponse.data) {
-        // Store payment request for idempotency
-        const expiresAt = new Date();
-        expiresAt.setMinutes(expiresAt.getMinutes() + 30); // 30-minute expiry
-        
-        await storage.setPaymentRequestByKey({
-          idempotencyKey,
-          userId,
-          plan,
-          merchantTransactionId: paymentResponse.data.merchantTransactionId,
-          paymentUrl: paymentResponse.data.instrumentResponse.redirectInfo.url,
-          amount,
-          status: 'pending',
-          provider: 'phonepe',
-          expiresAt,
-          metadata: {
-            redirectUrl,
-            email: user.email
-          }
-        });
-
-        res.json({
-          success: true,
-          paymentUrl: paymentResponse.data.instrumentResponse.redirectInfo.url,
-          merchantTransactionId: paymentResponse.data.merchantTransactionId,
-          status: 'created'
-        });
-      } else {
-        res.status(400).json({
-          message: paymentResponse.message || "Payment creation failed",
-          code: paymentResponse.code || "PAYMENT_FAILED"
-        });
-      }
-    } catch (error) {
-      console.error("Error creating PhonePe payment:", error);
-      res.status(500).json({ 
-        message: "Failed to create payment",
-        code: "PAYMENT_CREATE_FAILED"
-      });
-    }
-  });
-
-  // Cancel subscription 
-  app.post('/api/subscription/cancel', isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const { cancelAtPeriodEnd = true } = req.body;
-      
-      const user = await storage.getUser(userId);
-      if (!user) {
-        return res.status(404).json({ 
-          message: "User not found",
-          code: "USER_NOT_FOUND"
-        });
-      }
-
-      const activeSubscription = await storage.getActiveSubscriptionByUserId(userId);
-      if (!activeSubscription) {
-        return res.status(404).json({ 
-          message: "No active subscription found",
-          code: "NO_SUBSCRIPTION"
-        });
-      }
-
-      // Update local subscription record
-      await storage.updateSubscription(activeSubscription.id, {
-        cancelAtPeriodEnd: cancelAtPeriodEnd,
-        canceledAt: cancelAtPeriodEnd ? new Date() : null
-      });
-
-      // If canceling immediately, downgrade to Free plan
-      if (!cancelAtPeriodEnd) {
-        await storage.updateUserPlan(userId, 'Free', 'active');
-      }
-
-      res.json({ 
-        success: true, 
-        cancelAtPeriodEnd,
-        currentPeriodEnd: activeSubscription.currentPeriodEnd,
-        message: cancelAtPeriodEnd 
-          ? "Subscription will be cancelled at the end of current period" 
-          : "Subscription cancelled immediately"
-      });
-    } catch (error) {
-      console.error("Error cancelling subscription:", error);
-      res.status(500).json({ 
-        message: "Failed to cancel subscription",
-        code: "SUBSCRIPTION_CANCEL_FAILED"
-      });
-    }
-  });
-
-  // Check payment status
-  app.get('/api/subscription/payment-status/:merchantTransactionId', isAuthenticated, async (req: any, res) => {
-    try {
-      const { merchantTransactionId } = req.params;
-      
-      const status = await PhonePeService.checkPaymentStatus(merchantTransactionId);
-      
-      res.json({
-        success: true,
-        status,
-        merchantTransactionId
-      });
-    } catch (error) {
-      console.error("Error checking payment status:", error);
-      res.status(500).json({ 
-        message: "Failed to check payment status",
-        code: "STATUS_CHECK_FAILED"
-      });
-    }
-  });
 
   // =======================================
   // COMPREHENSIVE APPLICATION TRACKING API
