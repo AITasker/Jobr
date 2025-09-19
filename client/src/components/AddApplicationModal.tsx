@@ -124,7 +124,9 @@ export function AddApplicationModal({ isOpen, onOpenChange }: AddApplicationModa
       return await applicationResponse.json()
     },
     onSuccess: () => {
+      // Invalidate all relevant cache keys since adding an application affects multiple data sets
       queryClient.invalidateQueries({ queryKey: ['/api/applications'] })
+      queryClient.invalidateQueries({ queryKey: ['/api/jobs/matched'] })
       toast({
         title: 'Application Added',
         description: 'Your application has been successfully added to the tracker.',
