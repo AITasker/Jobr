@@ -131,7 +131,9 @@ export function EditApplicationModal({ application, isOpen, onOpenChange }: Edit
       return await response.json()
     },
     onSuccess: () => {
+      // Invalidate all relevant cache keys since updating an application affects multiple data sets
       queryClient.invalidateQueries({ queryKey: ['/api/applications'] })
+      queryClient.invalidateQueries({ queryKey: ['/api/jobs/matched'] })
       toast({
         title: 'Application Updated',
         description: 'Your application has been successfully updated.',
@@ -163,7 +165,9 @@ export function EditApplicationModal({ application, isOpen, onOpenChange }: Edit
       return true
     },
     onSuccess: () => {
+      // Invalidate all relevant cache keys since deleting an application affects multiple data sets
       queryClient.invalidateQueries({ queryKey: ['/api/applications'] })
+      queryClient.invalidateQueries({ queryKey: ['/api/jobs/matched'] })
       toast({
         title: 'Application Deleted',
         description: 'The application has been successfully removed.',
