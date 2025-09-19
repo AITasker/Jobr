@@ -146,7 +146,7 @@ export default function Dashboard() {
   // All queries must be called before any conditional logic
   const { data: cvData, isLoading: cvLoading, error: cvError } = useQuery<CVResponse | null>({
     queryKey: ['/api/cv'],
-    enabled: isAuthenticated,
+    enabled: Boolean(isAuthenticated),
     retry: false
   })
 
@@ -166,7 +166,7 @@ export default function Dashboard() {
   // Get all applications
   const { data: applications, isLoading: applicationsLoading } = useQuery<ApplicationWithJob[]>({
     queryKey: ['/api/applications'],
-    enabled: isAuthenticated,
+    enabled: Boolean(isAuthenticated),
     retry: false
   })
 
@@ -192,7 +192,7 @@ export default function Dashboard() {
   // Job insights query for market analysis
   const { data: jobInsights, isLoading: insightsLoading } = useQuery<{insights: JobInsights}>({
     queryKey: ['/api/jobs/insights'],
-    enabled: isAuthenticated && hasCvData && activeTab === 'jobs',
+    enabled: Boolean(isAuthenticated && hasCvData && activeTab === 'jobs'),
     retry: false,
     staleTime: 30 * 60 * 1000 // Cache for 30 minutes
   })
