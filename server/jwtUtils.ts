@@ -15,7 +15,7 @@ export interface JwtPayload {
   exp?: number;
 }
 
-// JWT utilities class
+// JWT utilities class with enhanced session management
 export class JwtUtils {
   /**
    * Sign a JWT token with user payload
@@ -118,5 +118,69 @@ export class JwtUtils {
     
     const now = Math.floor(Date.now() / 1000);
     return Math.max(0, payload.exp - now);
+  }
+
+  /**
+   * Check if token needs refresh (expires within the next hour)
+   */
+  static needsRefresh(payload: JwtPayload): boolean {
+    const timeUntilExpiry = this.getTimeUntilExpiry(payload);
+    return timeUntilExpiry > 0 && timeUntilExpiry < 3600; // Refresh if expires within 1 hour
+  }
+
+  /**
+   * Generate a new token with fresh expiry time
+   */
+  static refreshToken(payload: JwtPayload): string {
+    if (this.isTokenExpired(payload)) {
+      throw new Error('Cannot refresh expired token');
+    }
+
+    return this.signToken({
+      userId: payload.userId,
+      email: payload.email
+    });
+  }
+
+  /**
+   * Validate token format and structure
+   */
+  static validateTokenFormat(token: string): boolean {
+    if (!token || typeof token !== 'string') {
+      return false;
+    }
+
+    // JWT tokens have 3 parts separated by dots
+    const parts = token.split('.');
+    if (parts.length !== 3) {
+      return false;
+    }
+
+    // Each part should be base64 encoded
+    try {
+      parts.forEach(part => {
+        Buffer.from(part, 'base64');
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Extract token payload without verification (for debugging)
+   */
+  static extractPayloadUnsafe(token: string): any {
+    try {
+      const parts = token.split('.');
+      if (parts.length !== 3) {
+        return null;
+      }
+      
+      const payload = Buffer.from(parts[1], 'base64').toString('utf8');
+      return JSON.parse(payload);
+    } catch {
+      return null;
+    }
   }
 }

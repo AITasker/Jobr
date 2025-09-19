@@ -34,7 +34,7 @@ import {
   type InsertPaymentRequest
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, desc, sql } from "drizzle-orm";
+import { eq, and, desc, sql, or, gte, ilike } from "drizzle-orm";
 
 export interface IStorage {
   // User operations (required for Replit Auth)
@@ -65,6 +65,7 @@ export interface IStorage {
   createApiUsage(usage: InsertApiUsage): Promise<ApiUsage>;
   getApiUsageByUserId(userId: string, limit?: number): Promise<ApiUsage[]>;
   getDailyApiUsage(userId: string, date: Date): Promise<ApiUsage[]>;
+  getApiUsageSince(since: Date, endpoints?: string[]): Promise<ApiUsage[]>;
   
   // Template operations
   createTemplate(template: InsertTemplate): Promise<Template>;
@@ -255,6 +256,23 @@ export class DatabaseStorage implements IStorage {
           eq(apiUsage.success, true)
         )
       );
+  }
+
+  async getApiUsageSince(since: Date, endpoints?: string[]): Promise<ApiUsage[]> {
+    const whereConditions = [gte(apiUsage.createdAt, since)];
+    
+    if (endpoints && endpoints.length > 0) {
+      const endpointConditions = endpoints.map(endpoint => 
+        ilike(apiUsage.endpoint, `%${endpoint}%`)
+      );
+      whereConditions.push(or(...endpointConditions));
+    }
+    
+    return await db
+      .select()
+      .from(apiUsage)
+      .where(and(...whereConditions))
+      .orderBy(desc(apiUsage.createdAt));
   }
 
   // Template operations
