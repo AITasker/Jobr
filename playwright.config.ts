@@ -121,7 +121,7 @@ export default defineConfig({
       STRIPE_SECRET_KEY: 'sk_test_fake',
       STRIPE_WEBHOOK_SECRET: 'whsec_test_fake',
       PHONEPE_MERCHANT_ID: 'PGTESTPAYUAT86',
-      PHONEPE_SALT_KEY: '96434309-7796-489d-8924-ab56988a6076',
+      PHONEPE_SALT_KEY: process.env.PHONEPE_SALT_KEY || 'test-phonepe-salt-key-placeholder',
     }
   },
 
