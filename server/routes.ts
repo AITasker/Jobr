@@ -14,7 +14,8 @@ import { ApplicationPreparationService } from "./applicationPreparationService";
 import { AuthService } from "./authService";
 import { JwtUtils } from "./jwtUtils";
 import { SubscriptionService } from "./subscriptionService";
-import { registerSchema, loginSchema, insertJobSchema, insertApplicationSchema, createSubscriptionSchema, updateSubscriptionSchema, VALID_PRICE_MAPPINGS } from "@shared/schema";
+import { registerSchema, loginSchema, insertJobSchema, insertApplicationSchema, createSubscriptionSchema, updateSubscriptionSchema, phoneRequestSchema, phoneVerifySchema, jobApplySchema, cvTailorSchema, applicationUpdateSchema, batchPrepareSchema, subscriptionCancelSchema, VALID_PRICE_MAPPINGS } from "@shared/schema";
+import { createErrorResponse, ERROR_CODES } from "./utils/errorHandler";
 
 // Configure rate limiting for authentication routes
 const authRateLimit = rateLimit({
@@ -366,14 +367,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Phone OTP routes
   app.post('/api/auth/phone/request', authRateLimit, async (req: any, res) => {
     try {
-      const { phoneNumber } = req.body;
-      
-      if (!phoneNumber) {
+      // Priority 3: Phone Auth Validation - Use Zod schema
+      const validationResult = phoneRequestSchema.safeParse(req.body);
+      if (!validationResult.success) {
         return res.status(400).json({
-          message: "Phone number is required",
-          code: "PHONE_REQUIRED"
+          message: "Invalid input data",
+          errors: validationResult.error.errors,
+          code: "VALIDATION_ERROR"
         });
       }
+
+      const { phoneNumber } = validationResult.data;
 
       const result = await AuthService.requestPhoneOTP(phoneNumber);
       
@@ -401,14 +405,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/auth/phone/verify', authRateLimit, async (req: any, res) => {
     try {
-      const { phoneNumber, otpCode, firstName, lastName } = req.body;
-      
-      if (!phoneNumber || !otpCode) {
+      // Priority 3: Phone Auth Validation - Use Zod schema
+      const validationResult = phoneVerifySchema.safeParse(req.body);
+      if (!validationResult.success) {
         return res.status(400).json({
-          message: "Phone number and OTP code are required",
-          code: "MISSING_FIELDS"
+          message: "Invalid input data",
+          errors: validationResult.error.errors,
+          code: "VALIDATION_ERROR"
         });
       }
+
+      const { phoneNumber, otpCode, firstName, lastName } = validationResult.data;
 
       const result = await AuthService.verifyPhoneOTP(phoneNumber, otpCode, firstName, lastName);
       
@@ -483,7 +490,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const file = req.file;
 
       if (!file) {
-        return res.status(400).json({ message: 'No file uploaded' });
+        return res.status(400).json(createErrorResponse(
+          'No file uploaded',
+          ERROR_CODES.VALIDATION_ERROR
+        ));
       }
 
       // Extract text from the uploaded file
@@ -538,21 +548,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Handle specific error types
       if (error instanceof Error) {
-        if (error.message.includes('file type') || error.message.includes('file size')) {
-          return res.status(400).json({ message: error.message });
+        if (error.message.includes('file type')) {
+          return res.status(400).json(createErrorResponse(
+            error.message,
+            ERROR_CODES.INVALID_FILE_TYPE
+          ));
+        }
+        if (error.message.includes('file size')) {
+          return res.status(400).json(createErrorResponse(
+            error.message,
+            ERROR_CODES.FILE_TOO_LARGE
+          ));
         }
         if (error.message.includes('OpenAI API')) {
-          return res.status(503).json({ 
-            message: 'AI processing temporarily unavailable. Please try again later.',
-            details: error.message
-          });
+          return res.status(503).json(createErrorResponse( 
+            'AI processing temporarily unavailable. Please try again later.',
+            ERROR_CODES.INTERNAL_ERROR,
+            { service: 'openai', originalError: error.message }
+          ));
         }
       }
       
-      res.status(500).json({ 
-        message: "Failed to upload and process CV",
-        details: error instanceof Error ? error.message : 'Unknown error'
-      });
+      res.status(500).json(createErrorResponse(
+        "Failed to upload and process CV",
+        ERROR_CODES.INTERNAL_ERROR,
+        { details: error instanceof Error ? error.message : 'Unknown error' }
+      ));
     }
   });
 
@@ -619,12 +640,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const job = await storage.getJobById(req.params.id);
       if (!job) {
-        return res.status(404).json({ message: "Job not found" });
+        return res.status(404).json(createErrorResponse(
+          "Job not found",
+          ERROR_CODES.JOB_NOT_FOUND
+        ));
       }
       res.json(job);
     } catch (error) {
       console.error("Error fetching job:", error);
-      res.status(500).json({ message: "Failed to fetch job" });
+      res.status(500).json(createErrorResponse(
+        "Failed to fetch job",
+        ERROR_CODES.INTERNAL_ERROR
+      ));
     }
   });
 
@@ -732,13 +759,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Job not found" });
       }
 
-      // Check for existing application (duplicate prevention)
+      // Priority 2: Duplicate Application Prevention - Use proper 409 status code
       const existingApplication = await storage.checkExistingApplication(userId, jobId);
       if (existingApplication) {
-        return res.status(400).json({ 
+        return res.status(409).json({ 
           message: "You have already applied to this job",
           code: "DUPLICATE_APPLICATION",
-          existingApplication: {
+          existingApplicationId: existingApplication.id,
+          details: {
             id: existingApplication.id,
             status: existingApplication.status,
             appliedDate: existingApplication.appliedDate
@@ -973,7 +1001,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Get application with job details
       const applicationWithJob = await storage.getApplicationWithJob(id);
       if (!applicationWithJob || applicationWithJob.userId !== userId) {
-        return res.status(404).json({ message: "Application not found" });
+        return res.status(404).json(createErrorResponse(
+          "Application not found",
+          ERROR_CODES.APPLICATION_NOT_FOUND
+        ));
       }
 
       // Check if already prepared
@@ -1026,14 +1057,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
         });
 
-        res.status(500).json({
-          message: "Failed to prepare application",
-          error: result.error
-        });
+        res.status(500).json(createErrorResponse(
+          "Failed to prepare application",
+          ERROR_CODES.INTERNAL_ERROR,
+          { error: result.error }
+        ));
       }
     } catch (error) {
       console.error("Error preparing application:", error);
-      res.status(500).json({ message: "Failed to prepare application" });
+      res.status(500).json(createErrorResponse(
+        "Failed to prepare application",
+        ERROR_CODES.INTERNAL_ERROR,
+        { details: error instanceof Error ? error.message : 'Unknown error' }
+      ));
     }
   });
 
@@ -1041,7 +1077,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/cover-letter/generate', isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
-      const { jobId } = req.body;
+      
+      // Priority 3: Use cvTailorSchema for validation
+      const validationResult = cvTailorSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({
+          message: "Invalid input data",
+          errors: validationResult.error.errors,
+          code: "VALIDATION_ERROR"
+        });
+      }
+
+      const { jobId } = validationResult.data;
 
       const [user, cv, job] = await Promise.all([
         storage.getUser(userId),
@@ -1049,17 +1096,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
         storage.getJobById(jobId)
       ]);
 
-      if (!user || !cv || !job) {
-        return res.status(400).json({ 
-          message: "Missing required data (user, CV, or job)" 
-        });
+      if (!user) {
+        return res.status(404).json(createErrorResponse(
+          "User not found",
+          ERROR_CODES.USER_NOT_FOUND
+        ));
+      }
+
+      if (!cv) {
+        return res.status(400).json(createErrorResponse(
+          "CV required. Please upload your CV first.",
+          ERROR_CODES.CV_REQUIRED
+        ));
+      }
+
+      if (!job) {
+        return res.status(404).json(createErrorResponse(
+          "Job not found",
+          ERROR_CODES.JOB_NOT_FOUND
+        ));
       }
 
       const coverLetter = await ApplicationPreparationService.generateCoverLetter(cv, job, user);
       res.json(coverLetter);
     } catch (error) {
       console.error("Error generating cover letter:", error);
-      res.status(500).json({ message: "Failed to generate cover letter" });
+      res.status(500).json(createErrorResponse(
+        "Failed to generate cover letter",
+        ERROR_CODES.INTERNAL_ERROR,
+        { details: error instanceof Error ? error.message : 'Unknown error' }
+      ));
     }
   });
 
@@ -1325,6 +1391,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      // Priority 1: Payment Idempotency - Generate idempotency key
+      const idempotencyWindow = Math.floor(Date.now() / (5 * 60 * 1000)); // 5-minute window
+      const idempotencyKey = `${userId}_${plan}_${idempotencyWindow}`;
+
+      // Check for existing payment request
+      const existingPayment = await storage.getPaymentRequestByKey(idempotencyKey);
+      if (existingPayment) {
+        return res.json({
+          success: true,
+          paymentUrl: existingPayment.paymentUrl,
+          merchantTransactionId: existingPayment.merchantTransactionId,
+          status: 'existing',
+          message: 'Payment request already exists'
+        });
+      }
+
       const user = await storage.getUser(userId);
       
       if (!user) {
@@ -1351,10 +1433,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
       );
 
       if (paymentResponse.success && paymentResponse.data) {
+        // Store payment request for idempotency
+        const expiresAt = new Date();
+        expiresAt.setMinutes(expiresAt.getMinutes() + 30); // 30-minute expiry
+        
+        await storage.setPaymentRequestByKey({
+          idempotencyKey,
+          userId,
+          plan,
+          merchantTransactionId: paymentResponse.data.merchantTransactionId,
+          paymentUrl: paymentResponse.data.instrumentResponse.redirectInfo.url,
+          amount,
+          status: 'pending',
+          provider: 'phonepe',
+          expiresAt,
+          metadata: {
+            redirectUrl,
+            email: user.email
+          }
+        });
+
         res.json({
           success: true,
           paymentUrl: paymentResponse.data.instrumentResponse.redirectInfo.url,
-          merchantTransactionId: paymentResponse.data.merchantTransactionId
+          merchantTransactionId: paymentResponse.data.merchantTransactionId,
+          status: 'created'
         });
       } else {
         res.status(400).json({

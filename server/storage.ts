@@ -9,6 +9,7 @@ import {
   otpCodes,
   subscriptions,
   stripeEvents,
+  paymentRequests,
   type User,
   type UpsertUser,
   type Cv,
@@ -28,7 +29,9 @@ import {
   type Subscription,
   type InsertSubscription,
   type StripeEvent,
-  type InsertStripeEvent
+  type InsertStripeEvent,
+  type PaymentRequest,
+  type InsertPaymentRequest
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, sql } from "drizzle-orm";
@@ -96,6 +99,12 @@ export interface IStorage {
   getStripeEventByEventId(eventId: string): Promise<StripeEvent | undefined>;
   markStripeEventProcessed(eventId: string, errorMessage?: string): Promise<StripeEvent>;
   cleanupOldStripeEvents(olderThanDays: number): Promise<void>;
+
+  // Payment Request operations for payment idempotency (Priority 1)
+  getPaymentRequestByKey(idempotencyKey: string): Promise<PaymentRequest | undefined>;
+  setPaymentRequestByKey(paymentRequest: InsertPaymentRequest): Promise<PaymentRequest>;
+  updatePaymentRequestStatus(id: string, status: string, metadata?: any): Promise<PaymentRequest>;
+  cleanupExpiredPaymentRequests(): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -497,6 +506,39 @@ export class DatabaseStorage implements IStorage {
           sql`${stripeEvents.createdAt} < ${cutoffDate}`
         )
       );
+  }
+
+  // Payment Request operations for payment idempotency (Priority 1)
+  async getPaymentRequestByKey(idempotencyKey: string): Promise<PaymentRequest | undefined> {
+    const [paymentRequest] = await db
+      .select()
+      .from(paymentRequests)
+      .where(eq(paymentRequests.idempotencyKey, idempotencyKey));
+    return paymentRequest;
+  }
+
+  async setPaymentRequestByKey(paymentRequestData: InsertPaymentRequest): Promise<PaymentRequest> {
+    const [paymentRequest] = await db.insert(paymentRequests).values(paymentRequestData).returning();
+    return paymentRequest;
+  }
+
+  async updatePaymentRequestStatus(id: string, status: string, metadata?: any): Promise<PaymentRequest> {
+    const [paymentRequest] = await db
+      .update(paymentRequests)
+      .set({ 
+        status, 
+        metadata,
+        updatedAt: new Date() 
+      })
+      .where(eq(paymentRequests.id, id))
+      .returning();
+    return paymentRequest;
+  }
+
+  async cleanupExpiredPaymentRequests(): Promise<void> {
+    const now = new Date();
+    await db.delete(paymentRequests)
+      .where(sql`${paymentRequests.expiresAt} < ${now}`);
   }
 }
 
