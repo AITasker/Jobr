@@ -8,8 +8,112 @@ import type {
   InsertApplicationNotification 
 } from "@shared/schema";
 
-// Enhanced email monitoring service with SendGrid integration
+// Enhanced email monitoring service with SendGrid integration and retry logic
 export class EmailMonitoringService {
+  // Retry configuration for external API calls
+  private static readonly MAX_RETRIES = 3;
+  private static readonly RETRY_DELAY_BASE = 1000; // 1 second
+  private static readonly CIRCUIT_BREAKER_THRESHOLD = 5;
+  private static readonly CIRCUIT_BREAKER_TIMEOUT = 60000; // 1 minute
+  
+  // Circuit breaker state tracking
+  private static circuitBreaker = {
+    failures: 0,
+    lastFailureTime: 0,
+    state: 'CLOSED' as 'OPEN' | 'CLOSED' | 'HALF_OPEN'
+  };
+  
+  /**
+   * Sleep utility for retry delays
+   */
+  private static sleep(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+  
+  /**
+   * Check if circuit breaker allows requests
+   */
+  private static canMakeRequest(): boolean {
+    const now = Date.now();
+    
+    if (this.circuitBreaker.state === 'OPEN') {
+      if (now - this.circuitBreaker.lastFailureTime > this.CIRCUIT_BREAKER_TIMEOUT) {
+        this.circuitBreaker.state = 'HALF_OPEN';
+        return true;
+      }
+      return false;
+    }
+    
+    return true;
+  }
+  
+  /**
+   * Record request success for circuit breaker
+   */
+  private static recordSuccess(): void {
+    this.circuitBreaker.failures = 0;
+    this.circuitBreaker.state = 'CLOSED';
+  }
+  
+  /**
+   * Record request failure for circuit breaker
+   */
+  private static recordFailure(): void {
+    this.circuitBreaker.failures++;
+    this.circuitBreaker.lastFailureTime = Date.now();
+    
+    if (this.circuitBreaker.failures >= this.CIRCUIT_BREAKER_THRESHOLD) {
+      this.circuitBreaker.state = 'OPEN';
+      console.warn(`EmailMonitoringService: Circuit breaker opened after ${this.circuitBreaker.failures} failures`);
+    }
+  }
+  
+  /**
+   * Enhanced SendGrid API call with retry logic and circuit breaker
+   */
+  private static async sendEmailWithRetry(emailData: any): Promise<{ success: boolean; message: string; messageId?: string }> {
+    if (!this.canMakeRequest()) {
+      return {
+        success: false,
+        message: 'Email service temporarily unavailable (circuit breaker open)'
+      };
+    }
+    
+    let lastError: Error | null = null;
+    
+    for (let attempt = 0; attempt <= this.MAX_RETRIES; attempt++) {
+      try {
+        const result = await SendGridService.sendEmail(emailData);
+        
+        if (result.success) {
+          this.recordSuccess();
+          return result;
+        } else {
+          // Non-retryable failure (e.g., invalid email address)
+          if (result.message.includes('invalid') || result.message.includes('blocked')) {
+            return result;
+          }
+          throw new Error(result.message);
+        }
+      } catch (error) {
+        lastError = error as Error;
+        
+        if (attempt < this.MAX_RETRIES) {
+          // Exponential backoff with jitter
+          const delay = this.RETRY_DELAY_BASE * Math.pow(2, attempt) + Math.random() * 1000;
+          console.warn(`EmailMonitoringService: Attempt ${attempt + 1} failed, retrying in ${delay}ms:`, error);
+          await this.sleep(delay);
+        }
+      }
+    }
+    
+    // All retries exhausted
+    this.recordFailure();
+    return {
+      success: false,
+      message: lastError?.message || 'Email sending failed after retries'
+    };
+  }
   private static readonly EMAIL_TRACKING_PIXEL = '<img src="{{trackingPixel}}" width="1" height="1" alt="" style="display:none;">';
   private static readonly TRACKING_DOMAIN = process.env.TRACKING_DOMAIN || 'track.careercopilot.app';
 
@@ -31,8 +135,8 @@ export class EmailMonitoringService {
         application.userId
       );
 
-      // Send email via SendGrid
-      const result = await SendGridService.sendEmail({
+      // Send email via SendGrid with retry logic
+      const result = await this.sendEmailWithRetry({
         to: recipientEmail,
         subject,
         html: trackedHtmlContent,
@@ -102,7 +206,7 @@ export class EmailMonitoringService {
         application.userId
       );
 
-      const result = await SendGridService.sendEmail({
+      const result = await this.sendEmailWithRetry({
         to: recipientEmail,
         subject,
         html: trackedHtmlContent,

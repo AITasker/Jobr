@@ -22,7 +22,7 @@ import { EmailMonitoringService } from "./emailMonitoringService";
 import { ApplicationLifecycleService } from "./applicationLifecycleService";
 import { NotificationService } from "./notificationService";
 import { AnalyticsService } from "./analyticsService";
-import { registerSchema, loginSchema, insertJobSchema, insertApplicationSchema, createSubscriptionSchema, updateSubscriptionSchema, phoneRequestSchema, phoneVerifySchema, jobApplySchema, cvTailorSchema, applicationUpdateSchema, batchPrepareSchema, subscriptionCancelSchema, bookmarkJobSchema, jobSearchSchema, saveSearchSchema, updatePreferencesSchema, VALID_PRICE_MAPPINGS } from "@shared/schema";
+import { registerSchema, loginSchema, insertJobSchema, insertApplicationSchema, createSubscriptionSchema, updateSubscriptionSchema, phoneRequestSchema, phoneVerifySchema, jobApplySchema, cvTailorSchema, applicationUpdateSchema, batchPrepareSchema, subscriptionCancelSchema, bookmarkJobSchema, jobSearchSchema, saveSearchSchema, updatePreferencesSchema, VALID_PRICE_MAPPINGS } from "@shared/schema";\nimport { checkDatabaseHealth } from "./db";
 import { createErrorResponse, ERROR_CODES } from "./utils/errorHandler";
 import { addAuthMetricsRoute } from "./authMetricsRoute";
 
@@ -178,6 +178,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(mockStatus);
     } catch (error) {
       res.status(500).json({ error: 'Failed to get mock status', message: error instanceof Error ? error.message : 'Unknown error' });
+    }
+  });
+
+  // Health check endpoint - simple liveness check
+  app.get('/api/health', (req, res) => {
+    try {
+      const health = {
+        status: 'healthy',
+        timestamp: new Date().toISOString(),
+        uptime: process.uptime(),
+        environment: process.env.NODE_ENV,
+        node_version: process.version,
+        memory: {
+          used: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
+          total: Math.round(process.memoryUsage().heapTotal / 1024 / 1024),
+          limit: Math.round(process.memoryUsage().rss / 1024 / 1024)
+        }
+      };
+      
+      res.json(health);
+    } catch (error) {
+      console.error("Health check error:", error);
+      res.status(503).json({
+        status: 'unhealthy',
+        timestamp: new Date().toISOString(),
+        error: 'Health check failed'
+      });
     }
   });
 
