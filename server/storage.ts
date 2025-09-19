@@ -15,6 +15,12 @@ import {
   jobBookmarks,
   userPreferences,
   jobAlerts,
+  applicationHistory,
+  emailEvents,
+  applicationDocuments,
+  applicationNotifications,
+  employerInteractions,
+  applicationAnalytics,
   type User,
   type UpsertUser,
   type Cv,
@@ -47,7 +53,19 @@ import {
   type InsertUserPreferences,
   type JobAlert,
   type InsertJobAlert,
-  type JobSearchFilters
+  type JobSearchFilters,
+  type ApplicationHistory,
+  type InsertApplicationHistory,
+  type EmailEvent,
+  type InsertEmailEvent,
+  type ApplicationDocument,
+  type InsertApplicationDocument,
+  type ApplicationNotification,
+  type InsertApplicationNotification,
+  type EmployerInteraction,
+  type InsertEmployerInteraction,
+  type ApplicationAnalytics,
+  type InsertApplicationAnalytics
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, sql, or, gte, ilike } from "drizzle-orm";
@@ -126,6 +144,37 @@ export interface IStorage {
   // Enhanced Job Search operations
   getJobsWithFilters(filters: JobSearchFilters): Promise<Job[]>;
   searchJobsWithAI(query: string, filters: JobSearchFilters, userId?: string): Promise<Job[]>;
+  
+  // Enhanced Application Tracking operations
+  createApplicationHistory(history: InsertApplicationHistory): Promise<ApplicationHistory>;
+  getApplicationHistoryByApplicationId(applicationId: string): Promise<ApplicationHistory[]>;
+  
+  // Email Events operations
+  createEmailEvent(event: InsertEmailEvent): Promise<EmailEvent>;
+  getEmailEventsByApplication(applicationId: string, eventType?: string, daysBack?: number): Promise<EmailEvent[]>;
+  getEmailEventsByUser(userId: string, applicationIds?: string[], dateRange?: { start: Date; end: Date }): Promise<EmailEvent[]>;
+  
+  // Application Documents operations
+  createApplicationDocument(document: InsertApplicationDocument): Promise<ApplicationDocument>;
+  getApplicationDocumentsByApplicationId(applicationId: string): Promise<ApplicationDocument[]>;
+  updateApplicationDocument(id: string, updates: Partial<ApplicationDocument>): Promise<ApplicationDocument>;
+  
+  // Application Notifications operations
+  createApplicationNotification(notification: InsertApplicationNotification): Promise<ApplicationNotification>;
+  getApplicationNotificationsByUserId(userId: string, unreadOnly?: boolean): Promise<ApplicationNotification[]>;
+  updateApplicationNotification(id: string, updates: Partial<ApplicationNotification>): Promise<ApplicationNotification>;
+  markNotificationAsRead(id: string): Promise<ApplicationNotification>;
+  
+  // Employer Interactions operations
+  createEmployerInteraction(interaction: InsertEmployerInteraction): Promise<EmployerInteraction>;
+  getEmployerInteractionsByApplicationId(applicationId: string): Promise<EmployerInteraction[]>;
+  
+  // Application Analytics operations
+  createApplicationAnalytics(analytics: InsertApplicationAnalytics): Promise<ApplicationAnalytics>;
+  getApplicationAnalyticsByUserId(userId: string, metric?: string): Promise<ApplicationAnalytics[]>;
+  
+  // Enhanced search operations for email monitoring
+  getApplicationsByEmployerDomain(domain: string): Promise<Application[]>;
   
   // Saved Search operations
   createSavedSearch(savedSearch: InsertSavedSearch): Promise<SavedSearch>;
@@ -829,6 +878,258 @@ export class DatabaseStorage implements IStorage {
       .from(jobAlerts)
       .where(eq(jobAlerts.isActive, true))
       .orderBy(jobAlerts.nextScheduled);
+  }
+
+  // Enhanced Application Tracking operations
+  async createApplicationHistory(history: InsertApplicationHistory): Promise<ApplicationHistory> {
+    const [created] = await db.insert(applicationHistory)
+      .values(history)
+      .returning();
+    return created;
+  }
+
+  async getApplicationHistoryByApplicationId(applicationId: string): Promise<ApplicationHistory[]> {
+    return await db.select()
+      .from(applicationHistory)
+      .where(eq(applicationHistory.applicationId, applicationId))
+      .orderBy(desc(applicationHistory.createdAt));
+  }
+
+  // Email Events operations
+  async createEmailEvent(event: InsertEmailEvent): Promise<EmailEvent> {
+    const [created] = await db.insert(emailEvents)
+      .values(event)
+      .returning();
+    return created;
+  }
+
+  async getEmailEventsByApplication(
+    applicationId: string, 
+    eventType?: string, 
+    daysBack?: number
+  ): Promise<EmailEvent[]> {
+    let query = db.select()
+      .from(emailEvents)
+      .where(eq(emailEvents.applicationId, applicationId));
+
+    if (eventType) {
+      query = query.where(and(
+        eq(emailEvents.applicationId, applicationId),
+        eq(emailEvents.eventType, eventType)
+      ));
+    }
+
+    if (daysBack) {
+      const cutoffDate = new Date();
+      cutoffDate.setDate(cutoffDate.getDate() - daysBack);
+      query = query.where(and(
+        eq(emailEvents.applicationId, applicationId),
+        gte(emailEvents.timestamp, cutoffDate),
+        eventType ? eq(emailEvents.eventType, eventType) : sql`true`
+      ));
+    }
+
+    return await query.orderBy(desc(emailEvents.timestamp));
+  }
+
+  async getEmailEventsByUser(
+    userId: string, 
+    applicationIds?: string[], 
+    dateRange?: { start: Date; end: Date }
+  ): Promise<EmailEvent[]> {
+    let query = db.select()
+      .from(emailEvents)
+      .where(eq(emailEvents.userId, userId));
+
+    if (applicationIds && applicationIds.length > 0) {
+      query = query.where(and(
+        eq(emailEvents.userId, userId),
+        sql`${emailEvents.applicationId} = ANY(${applicationIds})`
+      ));
+    }
+
+    if (dateRange) {
+      query = query.where(and(
+        eq(emailEvents.userId, userId),
+        gte(emailEvents.timestamp, dateRange.start),
+        sql`${emailEvents.timestamp} <= ${dateRange.end}`
+      ));
+    }
+
+    return await query.orderBy(desc(emailEvents.timestamp));
+  }
+
+  // Application Documents operations
+  async createApplicationDocument(document: InsertApplicationDocument): Promise<ApplicationDocument> {
+    const [created] = await db.insert(applicationDocuments)
+      .values(document)
+      .returning();
+    return created;
+  }
+
+  async getApplicationDocumentsByApplicationId(applicationId: string): Promise<ApplicationDocument[]> {
+    return await db.select()
+      .from(applicationDocuments)
+      .where(and(
+        eq(applicationDocuments.applicationId, applicationId),
+        eq(applicationDocuments.isActive, true)
+      ))
+      .orderBy(desc(applicationDocuments.createdAt));
+  }
+
+  async updateApplicationDocument(id: string, updates: Partial<ApplicationDocument>): Promise<ApplicationDocument> {
+    const [updated] = await db.update(applicationDocuments)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(applicationDocuments.id, id))
+      .returning();
+    return updated;
+  }
+
+  // Application Notifications operations
+  async createApplicationNotification(notification: InsertApplicationNotification): Promise<ApplicationNotification> {
+    const [created] = await db.insert(applicationNotifications)
+      .values(notification)
+      .returning();
+    return created;
+  }
+
+  async getApplicationNotificationsByUserId(
+    userId: string, 
+    unreadOnly?: boolean
+  ): Promise<ApplicationNotification[]> {
+    let query = db.select()
+      .from(applicationNotifications)
+      .where(and(
+        eq(applicationNotifications.userId, userId),
+        eq(applicationNotifications.isActive, true)
+      ));
+
+    if (unreadOnly) {
+      query = query.where(and(
+        eq(applicationNotifications.userId, userId),
+        eq(applicationNotifications.isActive, true),
+        eq(applicationNotifications.isRead, false)
+      ));
+    }
+
+    return await query.orderBy(desc(applicationNotifications.scheduledFor));
+  }
+
+  async updateApplicationNotification(id: string, updates: Partial<ApplicationNotification>): Promise<ApplicationNotification> {
+    const [updated] = await db.update(applicationNotifications)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(applicationNotifications.id, id))
+      .returning();
+    return updated;
+  }
+
+  async markNotificationAsRead(id: string): Promise<ApplicationNotification> {
+    const [updated] = await db.update(applicationNotifications)
+      .set({ isRead: true, updatedAt: new Date() })
+      .where(eq(applicationNotifications.id, id))
+      .returning();
+    return updated;
+  }
+
+  // Employer Interactions operations
+  async createEmployerInteraction(interaction: InsertEmployerInteraction): Promise<EmployerInteraction> {
+    const [created] = await db.insert(employerInteractions)
+      .values(interaction)
+      .returning();
+    return created;
+  }
+
+  async getEmployerInteractionsByApplicationId(applicationId: string): Promise<EmployerInteraction[]> {
+    return await db.select()
+      .from(employerInteractions)
+      .where(eq(employerInteractions.applicationId, applicationId))
+      .orderBy(desc(employerInteractions.timestamp));
+  }
+
+  // Application Analytics operations
+  async createApplicationAnalytics(analytics: InsertApplicationAnalytics): Promise<ApplicationAnalytics> {
+    const [created] = await db.insert(applicationAnalytics)
+      .values(analytics)
+      .returning();
+    return created;
+  }
+
+  async getApplicationAnalyticsByUserId(
+    userId: string, 
+    metric?: string
+  ): Promise<ApplicationAnalytics[]> {
+    let query = db.select()
+      .from(applicationAnalytics)
+      .where(eq(applicationAnalytics.userId, userId));
+
+    if (metric) {
+      query = query.where(and(
+        eq(applicationAnalytics.userId, userId),
+        eq(applicationAnalytics.metric, metric)
+      ));
+    }
+
+    return await query.orderBy(desc(applicationAnalytics.calculatedAt));
+  }
+
+  // Enhanced search operations for email monitoring
+  async getApplicationsByEmployerDomain(domain: string): Promise<Application[]> {
+    // Join with jobs table to search by company domain
+    return await db.select({
+      id: applications.id,
+      userId: applications.userId,
+      jobId: applications.jobId,
+      status: applications.status,
+      matchScore: applications.matchScore,
+      tailoredCv: applications.tailoredCv,
+      coverLetter: applications.coverLetter,
+      preparationStatus: applications.preparationStatus,
+      preparationMetadata: applications.preparationMetadata,
+      emailSentAt: applications.emailSentAt,
+      emailOpened: applications.emailOpened,
+      emailOpenedAt: applications.emailOpenedAt,
+      emailRepliedAt: applications.emailRepliedAt,
+      lastEmailInteractionAt: applications.lastEmailInteractionAt,
+      appliedDate: applications.appliedDate,
+      viewedByEmployerAt: applications.viewedByEmployerAt,
+      interviewScheduledAt: applications.interviewScheduledAt,
+      interviewDate: applications.interviewDate,
+      interviewCompletedAt: applications.interviewCompletedAt,
+      offerReceivedAt: applications.offerReceivedAt,
+      rejectedAt: applications.rejectedAt,
+      withdrawnAt: applications.withdrawnAt,
+      lastStatusChangeAt: applications.lastStatusChangeAt,
+      nextFollowUpDate: applications.nextFollowUpDate,
+      followUpReminderSent: applications.followUpReminderSent,
+      autoFollowUpEnabled: applications.autoFollowUpEnabled,
+      employerProfileViews: applications.employerProfileViews,
+      applicationDownloads: applications.applicationDownloads,
+      employerInteractionScore: applications.employerInteractionScore,
+      applicationSource: applications.applicationSource,
+      priority: applications.priority,
+      notes: applications.notes,
+      internalNotes: applications.internalNotes,
+      tags: applications.tags,
+      createdAt: applications.createdAt,
+      updatedAt: applications.updatedAt,
+      job: {
+        id: jobs.id,
+        title: jobs.title,
+        company: jobs.company,
+        location: jobs.location,
+        type: jobs.type,
+        salary: jobs.salary,
+        description: jobs.description,
+        requirements: jobs.requirements,
+        postedDate: jobs.postedDate,
+        isActive: jobs.isActive,
+        createdAt: jobs.createdAt
+      }
+    })
+    .from(applications)
+    .innerJoin(jobs, eq(applications.jobId, jobs.id))
+    .where(ilike(jobs.company, `%${domain}%`))
+    .orderBy(desc(applications.appliedDate));
   }
 }
 
