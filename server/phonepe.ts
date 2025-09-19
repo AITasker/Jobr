@@ -116,7 +116,7 @@ export class PhonePeService {
       // Generate checksum
       const checksum = this.generateChecksum(base64Payload, '/pg/v1/pay');
 
-      // Make API request to PhonePe
+      // Make API request to PhonePe with timeout
       const response = await fetch(`${phonePeConfig.baseUrl}/pg/v1/pay`, {
         method: 'POST',
         headers: {
@@ -125,10 +125,40 @@ export class PhonePeService {
         },
         body: JSON.stringify({
           request: base64Payload
-        })
+        }),
+        signal: AbortSignal.timeout(30000) // 30 second timeout
       });
 
-      const result = await response.json();
+      // CRITICAL: Check response status and content type before parsing JSON
+      console.log(`[PhonePe] Payment creation response: ${response.status} ${response.statusText}`);
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`[PhonePe] Payment creation failed: HTTP ${response.status} - ${errorText}`);
+        throw new Error(`PhonePe API request failed: HTTP ${response.status} - ${response.statusText}`);
+      }
+
+      const contentType = response.headers.get('Content-Type') || '';
+      if (!contentType.includes('application/json')) {
+        const responseText = await response.text();
+        console.error(`[PhonePe] Non-JSON response received: Content-Type=${contentType}, Body=${responseText}`);
+        throw new Error(`PhonePe API returned non-JSON response: ${contentType}`);
+      }
+
+      // Handle potentially empty JSON response
+      const responseText = await response.text();
+      if (!responseText.trim()) {
+        console.error('[PhonePe] Empty response body received');
+        throw new Error('PhonePe API returned empty response');
+      }
+
+      let result;
+      try {
+        result = JSON.parse(responseText);
+      } catch (jsonError) {
+        console.error(`[PhonePe] JSON parsing failed: ${jsonError}. Response: ${responseText}`);
+        throw new Error(`PhonePe API returned invalid JSON: ${jsonError}`);
+      }
 
       // Store payment intent for tracking
       await storage.createStripeEvent({
@@ -169,18 +199,205 @@ export class PhonePeService {
           'Content-Type': 'application/json',
           'X-VERIFY': checksum,
           'X-MERCHANT-ID': phonePeConfig.merchantId
-        }
+        },
+        signal: AbortSignal.timeout(30000) // 30 second timeout
       });
 
-      return await response.json();
+      // CRITICAL: Check response status and content type before parsing JSON
+      console.log(`[PhonePe] Status check response: ${response.status} ${response.statusText} for txn: ${merchantTransactionId}`);
+      
+      // For status checks, handle non-200 responses gracefully without throwing
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.warn(`[PhonePe] Status check returned non-200: HTTP ${response.status} - ${errorText}`);
+        // Return a structured error response instead of throwing
+        return {
+          success: false,
+          code: 'HTTP_ERROR',
+          message: `HTTP ${response.status}: ${response.statusText}`,
+          httpStatus: response.status,
+          responseBody: errorText
+        };
+      }
+
+      const contentType = response.headers.get('Content-Type') || '';
+      if (!contentType.includes('application/json')) {
+        const responseText = await response.text();
+        console.warn(`[PhonePe] Status check returned non-JSON: Content-Type=${contentType}, Body=${responseText}`);
+        return {
+          success: false,
+          code: 'NON_JSON_RESPONSE',
+          message: `Non-JSON response received: ${contentType}`,
+          responseBody: responseText
+        };
+      }
+
+      // Handle potentially empty JSON response
+      const responseText = await response.text();
+      if (!responseText.trim()) {
+        console.warn('[PhonePe] Status check returned empty response');
+        return {
+          success: false,
+          code: 'EMPTY_RESPONSE',
+          message: 'Empty response body received'
+        };
+      }
+
+      // Parse JSON with error handling
+      try {
+        const result = JSON.parse(responseText);
+        console.log(`[PhonePe] Status check successful for txn: ${merchantTransactionId}`);
+        return result;
+      } catch (jsonError) {
+        console.error(`[PhonePe] Status check JSON parsing failed: ${jsonError}. Response: ${responseText}`);
+        return {
+          success: false,
+          code: 'JSON_PARSE_ERROR',
+          message: `Invalid JSON response: ${jsonError}`,
+          responseBody: responseText
+        };
+      }
+
     } catch (error) {
       console.error('PhonePe status check failed:', error);
-      throw error;
+      // Return structured error instead of throwing to prevent webhook failures
+      return {
+        success: false,
+        code: 'REQUEST_ERROR',
+        message: error instanceof Error ? error.message : 'Unknown error occurred',
+        error: error
+      };
     }
   }
 
   /**
-   * Handle PhonePe webhook
+   * CRITICAL SECURITY: Verify payment status via API before any state changes
+   * This is the primary defense against fake webhook attacks
+   */
+  private static async verifyPaymentStatusBeforeProcessing(
+    merchantTransactionId: string, 
+    expectedAmount: number,
+    webhookAuthentic: boolean
+  ): Promise<{
+    isValid: boolean;
+    reason?: string;
+    verifiedState?: string;
+    verifiedResponseCode?: string;
+    verifiedAmount?: number;
+  }> {
+    try {
+      console.log(`[SECURITY] Verifying payment status for transaction: ${merchantTransactionId}`);
+      
+      // Get payment status from PhonePe API (authoritative source)
+      const statusResponse = await this.checkPaymentStatus(merchantTransactionId);
+      
+      if (!statusResponse.success) {
+        return {
+          isValid: false,
+          reason: `PhonePe API returned error: ${statusResponse.message || 'Unknown error'}`
+        };
+      }
+
+      const { data } = statusResponse;
+      if (!data) {
+        return {
+          isValid: false,
+          reason: 'No payment data returned from PhonePe API'
+        };
+      }
+
+      const { 
+        merchantTransactionId: verifiedTxnId,
+        transactionId: verifiedTransactionId,
+        amount: verifiedAmount,
+        state: verifiedState,
+        responseCode: verifiedResponseCode 
+      } = data;
+
+      // Validate transaction ID matches
+      if (verifiedTxnId !== merchantTransactionId) {
+        return {
+          isValid: false,
+          reason: `Transaction ID mismatch: webhook=${merchantTransactionId}, api=${verifiedTxnId}`
+        };
+      }
+
+      // Validate amount matches (critical for financial security)
+      if (verifiedAmount !== expectedAmount) {
+        return {
+          isValid: false,
+          reason: `Amount mismatch: webhook=${expectedAmount}, api=${verifiedAmount}`
+        };
+      }
+
+      // If webhook signature verification failed, require successful payment state
+      if (!webhookAuthentic && !(verifiedState === 'COMPLETED' && verifiedResponseCode === 'SUCCESS')) {
+        return {
+          isValid: false,
+          reason: 'Webhook signature invalid and payment not confirmed as successful by API'
+        };
+      }
+
+      console.log(`[SECURITY] Payment verification successful: ${merchantTransactionId}`);
+      
+      return {
+        isValid: true,
+        verifiedState,
+        verifiedResponseCode,
+        verifiedAmount
+      };
+      
+    } catch (error) {
+      console.error('[SECURITY] Payment status verification failed:', error);
+      return {
+        isValid: false,
+        reason: `Status verification error: ${error instanceof Error ? error.message : 'Unknown error'}`
+      };
+    }
+  }
+
+  /**
+   * Verify webhook authenticity using Basic Auth or X-VERIFY header
+   */
+  private static verifyWebhookSignature(req: Request): boolean {
+    try {
+      // Check for Basic Authentication (recommended approach)
+      const authHeader = req.headers.authorization;
+      if (authHeader && authHeader.startsWith('Basic ')) {
+        const base64Credentials = authHeader.split(' ')[1];
+        const credentials = Buffer.from(base64Credentials, 'base64').toString('ascii');
+        const [username, password] = credentials.split(':');
+        
+        // Calculate expected hash using merchant credentials
+        const expectedHash = crypto.createHash('sha256')
+          .update(`${phonePeConfig?.merchantId}:${phonePeConfig?.saltKey}`)
+          .digest('hex');
+        
+        const receivedHash = crypto.createHash('sha256')
+          .update(`${username}:${password}`)
+          .digest('hex');
+        
+        return expectedHash === receivedHash;
+      }
+
+      // Fallback: Check X-VERIFY header (less common for webhooks but possible)
+      const xVerify = req.headers['x-verify'] as string;
+      if (xVerify && phonePeConfig) {
+        const payload = JSON.stringify(req.body);
+        const expectedChecksum = this.generateChecksum(payload, '/api/phonepe/webhook');
+        return xVerify === expectedChecksum;
+      }
+
+      // No authentication headers found
+      return false;
+    } catch (error) {
+      console.error('Webhook signature verification failed:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Handle PhonePe webhook with comprehensive security verification
    */
   static async handleWebhook(req: Request, res: Response): Promise<void> {
     try {
@@ -196,11 +413,11 @@ export class PhonePeService {
       const webhookPayload = req.body;
       console.log('PhonePe webhook received:', webhookPayload);
 
-      // Verify webhook signature if available
-      const xVerify = req.headers['x-verify'] as string;
-      if (xVerify) {
-        // TODO: Implement webhook signature verification
-        // PhonePe webhook verification is optional but recommended
+      // SECURITY: Verify webhook authenticity (first line of defense)
+      const isWebhookAuthentic = this.verifyWebhookSignature(req);
+      if (!isWebhookAuthentic) {
+        console.warn('PhonePe webhook signature verification failed - potential spoofing attempt');
+        // Still proceed but mark for mandatory status verification
       }
 
       const { merchantTransactionId, transactionId, amount, state, responseCode } = webhookPayload;
@@ -213,11 +430,29 @@ export class PhonePeService {
         return;
       }
 
-      // Process the payment based on state
-      if (state === 'COMPLETED' && responseCode === 'SUCCESS') {
-        await this.handleSuccessfulPayment(merchantTransactionId, transactionId, amount);
+      // SECURITY: ALWAYS verify payment status via API before processing (critical defense)
+      // This protects against spoofed webhooks even if signature verification fails
+      const statusVerification = await this.verifyPaymentStatusBeforeProcessing(
+        merchantTransactionId, 
+        amount, 
+        isWebhookAuthentic
+      );
+      
+      if (!statusVerification.isValid) {
+        console.error(`Payment status verification failed: ${statusVerification.reason}`);
+        res.status(400).json({ 
+          error: 'Payment verification failed', 
+          reason: statusVerification.reason,
+          code: 'PAYMENT_VERIFICATION_FAILED'
+        });
+        return;
+      }
+
+      // Process the payment based on VERIFIED state
+      if (statusVerification.verifiedState === 'COMPLETED' && statusVerification.verifiedResponseCode === 'SUCCESS') {
+        await this.handleSuccessfulPayment(merchantTransactionId, transactionId, statusVerification.verifiedAmount || amount);
       } else {
-        await this.handleFailedPayment(merchantTransactionId, state, responseCode);
+        await this.handleFailedPayment(merchantTransactionId, statusVerification.verifiedState || state, statusVerification.verifiedResponseCode || responseCode);
       }
 
       // Mark event as processed
