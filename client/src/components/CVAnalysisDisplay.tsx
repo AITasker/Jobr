@@ -120,10 +120,46 @@ export function CVAnalysisDisplay({ cvData, onTriggerJobMatching, onReUpload }: 
 
   if (analysisLoading) {
     return (
-      <Card>
+      <Card className="slide-in-up">
         <CardContent className="flex flex-col items-center justify-center py-12">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mb-4"></div>
-          <p className="text-muted-foreground">Analyzing your CV with AI...</p>
+          <p className="text-muted-foreground mb-2">Analyzing your CV with AI...</p>
+          <div className="flex items-center gap-1 mt-2">
+            <div className="w-2 h-2 bg-primary rounded-full processing-indicator"></div>
+            <div className="w-2 h-2 bg-primary rounded-full processing-indicator animation-delay-200"></div>
+            <div className="w-2 h-2 bg-primary rounded-full processing-indicator animation-delay-400"></div>
+          </div>
+          <p className="text-xs text-muted-foreground mt-4">This may take a few seconds...</p>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  if (analysisError) {
+    return (
+      <Card className="slide-in-up">
+        <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+          <AlertCircle className="h-12 w-12 text-destructive mb-4" />
+          <h3 className="text-lg font-semibold mb-2">Analysis Failed</h3>
+          <p className="text-muted-foreground mb-4">
+            We couldn't analyze your CV right now. You can still view your uploaded CV and find job matches.
+          </p>
+          <div className="flex gap-2">
+            <Button
+              onClick={() => refetchAnalysis()}
+              variant="outline"
+              data-testid="button-retry-analysis"
+            >
+              <RefreshCw className="h-4 w-4 mr-1" />
+              Retry Analysis
+            </Button>
+            <Button
+              onClick={onReUpload}
+              data-testid="button-reupload-after-error"
+            >
+              Upload Different CV
+            </Button>
+          </div>
         </CardContent>
       </Card>
     )
@@ -134,7 +170,7 @@ export function CVAnalysisDisplay({ cvData, onTriggerJobMatching, onReUpload }: 
   const completenessScore = analysis.completenessScore || 0
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 slide-in-up">
       {/* CV Overview Header */}
       <Card>
         <CardHeader>

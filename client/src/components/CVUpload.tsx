@@ -251,12 +251,16 @@ export function CVUpload({ onUploadComplete, onJobMatchingTrigger }: CVUploadPro
             {uploadStatus === 'processing' && (
               <div className="mt-4 space-y-2">
                 <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
-                  <div className="animate-pulse w-2 h-2 bg-primary rounded-full"></div>
+                  <div className="w-2 h-2 bg-primary rounded-full processing-indicator"></div>
                   AI is extracting your skills and experience
                 </div>
                 <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
-                  <div className="animate-pulse w-2 h-2 bg-primary rounded-full animation-delay-200"></div>
+                  <div className="w-2 h-2 bg-primary rounded-full processing-indicator animation-delay-200"></div>
                   Preparing personalized job recommendations
+                </div>
+                <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
+                  <div className="w-2 h-2 bg-primary rounded-full processing-indicator animation-delay-400"></div>
+                  Analyzing job market compatibility
                 </div>
               </div>
             )}

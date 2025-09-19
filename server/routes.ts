@@ -9,6 +9,9 @@ import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./replitAuth";
 import { FileProcessor } from "./fileProcessor";
 import { OpenAIService } from "./openaiService";
+import OpenAI from "openai";
+
+const openai = process.env.OPENAI_API_KEY ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null;
 import { JobMatchingService } from "./jobMatchingService";
 import { ApplicationPreparationService } from "./applicationPreparationService";
 import { AuthService } from "./authService";
@@ -653,9 +656,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
             - industryFit: likely industry matches based on profile
           `;
 
-          const response = await OpenAIService.performCVParsing(analysisPrompt);
-          analysis = response;
-          processingMethod = 'ai';
+          // Use OpenAI for analysis instead of parsing
+          const response = await openai!.chat.completions.create({
+            model: "gpt-5",
+            messages: [
+              { role: "system", content: "You are an expert CV analyst. Provide detailed analysis in JSON format." },
+              { role: "user", content: analysisPrompt }
+            ],
+            response_format: { type: "json_object" },
+            temperature: 0.3,
+            max_tokens: 800
+          });
+
+          const content = response.choices[0]?.message?.content;
+          if (content) {
+            analysis = JSON.parse(content);
+            processingMethod = 'ai';
+          }
 
           // Generate specific recommendations
           recommendations = [
@@ -771,8 +788,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
             - jobSearchStrategy: tailored job search recommendations
           `;
 
-          personalizedRecommendations = await OpenAIService.performCVParsing(personalizationPrompt);
-          processingMethod = 'ai';
+          // Use OpenAI for personalization
+          const response = await openai!.chat.completions.create({
+            model: "gpt-5", 
+            messages: [
+              { role: "system", content: "You are a career advisor. Provide personalized recommendations in JSON format." },
+              { role: "user", content: personalizationPrompt }
+            ],
+            response_format: { type: "json_object" },
+            temperature: 0.3,
+            max_tokens: 800
+          });
+
+          const content = response.choices[0]?.message?.content;
+          if (content) {
+            personalizedRecommendations = JSON.parse(content);
+            processingMethod = 'ai';
+          }
 
         } catch (aiError) {
           console.warn('AI personalization failed, providing basic recommendations:', aiError);

@@ -145,9 +145,22 @@ export default function Dashboard() {
   const handleCVUpload = () => {
     // Invalidate the CV query to refetch the updated CV data
     queryClient.invalidateQueries({ queryKey: ['/api/cv'] })
+    // Also invalidate job matches since we have new CV data
+    queryClient.invalidateQueries({ queryKey: ['/api/jobs/matched'] })
     toast({
       title: "CV Processed Successfully!",
       description: "Your CV has been analyzed and you can now view matched jobs.",
+    })
+  }
+
+  const handleJobMatchingTrigger = () => {
+    // Switch to jobs tab and trigger job matching
+    setActiveTab('jobs')
+    // Invalidate matched jobs to fetch fresh results
+    queryClient.invalidateQueries({ queryKey: ['/api/jobs/matched'] })
+    toast({
+      title: "Finding Your Perfect Matches!",
+      description: "Our AI is analyzing your CV against thousands of job opportunities.",
     })
   }
 
@@ -176,7 +189,10 @@ export default function Dashboard() {
                 Let's get started by uploading your CV. Our AI will analyze it to find perfect job matches.
               </p>
             </div>
-            <CVUpload onUploadComplete={handleCVUpload} />
+            <CVUpload 
+              onUploadComplete={handleCVUpload} 
+              onJobMatchingTrigger={handleJobMatchingTrigger}
+            />
           </div>
         </main>
       </div>

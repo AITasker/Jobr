@@ -2,6 +2,43 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Custom animations for CV upload and processing */
+@keyframes pulse-subtle {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+@keyframes slide-in-up {
+  from { transform: translateY(20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes processing-dots {
+  0%, 20% { opacity: 1; }
+  50% { opacity: 0.4; }
+  100% { opacity: 1; }
+}
+
+.animation-delay-200 {
+  animation-delay: 200ms;
+}
+
+.animation-delay-400 {
+  animation-delay: 400ms;
+}
+
+.pulse-subtle {
+  animation: pulse-subtle 2s ease-in-out infinite;
+}
+
+.slide-in-up {
+  animation: slide-in-up 0.5s ease-out forwards;
+}
+
+.processing-indicator {
+  animation: processing-dots 1.5s ease-in-out infinite;
+}
+
 /* LIGHT MODE */
 :root {
   --button-outline: rgba(0,0,0, .10);
