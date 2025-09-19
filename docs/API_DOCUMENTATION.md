@@ -546,7 +546,7 @@ Get personalized job recommendations using AI matching.
 ```
 
 **Features:**
-- OpenAI GPT-5 powered analysis
+- OpenAI (current models, default gpt-4-turbo) powered analysis
 - Real-time skill matching
 - Personalized recommendations
 - Cached results for performance
