@@ -1,4 +1,6 @@
 import OpenAI from "openai";
+import memoize from "memoizee";
+import crypto from "crypto";
 import type { Cv, Job } from "@shared/schema";
 import { ParsedCVData } from "./openaiService";
 
@@ -31,50 +33,486 @@ export interface JobMatchResult {
   };
 }
 
+export interface JobMatchingMetrics {
+  tokensUsed: number;
+  processingTime: number;
+  cacheHit: boolean;
+  retryCount: number;
+  success: boolean;
+  batchSize?: number;
+}
+
+export interface EnhancedJobMatchResult extends JobMatchResult {
+  metrics: JobMatchingMetrics;
+  personalizedScore?: number;
+  recommendationReason?: string;
+}
+
+export interface UserBehaviorData {
+  appliedJobs: string[];
+  viewedJobs: string[];
+  savedJobs: string[];
+  rejectedJobs: string[];
+  preferredCompanies: string[];
+  preferredJobTypes: string[];
+  averageViewTime: number;
+}
+
+interface MatchCacheEntry {
+  result: JobMatchResult;
+  timestamp: number;
+  hash: string;
+}
+
 export class JobMatchingService {
+  // Configuration constants for optimization
+  private static readonly CACHE_TTL = 12 * 60 * 60 * 1000; // 12 hours (shorter than CV parsing for fresh job market data)
+  private static readonly MAX_RETRIES = 3;
+  private static readonly RETRY_DELAY_BASE = 1000;
+  private static readonly MAX_TOKENS = 1000; // Reduced from 1500 for cost efficiency
+  private static readonly TEMPERATURE = 0.2; // Lower for more consistent matching
+  private static readonly BATCH_SIZE = 8; // Optimal batch size for job matching
+  
+  // Enhanced cache for job matching results
+  private static cache = new Map<string, MatchCacheEntry>();
+  
+  // User behavior tracking for personalized recommendations
+  private static userBehavior = new Map<string, UserBehaviorData>();
+  
+  // Performance metrics tracking
+  private static metrics = {
+    totalRequests: 0,
+    cacheHits: 0,
+    batchedRequests: 0,
+    retryCount: 0,
+    avgResponseTime: 0,
+    tokensSaved: 0,
+    personalizedRecommendations: 0
+  };
+
   static isAvailable(): boolean {
     return !!process.env.OPENAI_API_KEY;
   }
 
+  /**
+   * Get current performance metrics with detailed analytics
+   */
+  static getMetrics() {
+    return {
+      ...this.metrics,
+      cacheHitRate: this.metrics.totalRequests > 0 ? (this.metrics.cacheHits / this.metrics.totalRequests) * 100 : 0,
+      batchEfficiency: this.metrics.totalRequests > 0 ? (this.metrics.batchedRequests / this.metrics.totalRequests) * 100 : 0,
+      avgTokensSaved: this.metrics.cacheHits > 0 ? this.metrics.tokensSaved / this.metrics.cacheHits : 0,
+      personalizationRate: this.metrics.totalRequests > 0 ? (this.metrics.personalizedRecommendations / this.metrics.totalRequests) * 100 : 0
+    };
+  }
+
+  /**
+   * Generate cache key for job matching results
+   */
+  private static generateMatchCacheKey(cvId: string, jobId: string, preferences?: any): string {
+    const prefString = preferences ? JSON.stringify(preferences) : '';
+    const input = `${cvId}-${jobId}-${prefString}`;
+    return crypto.createHash('sha256').update(input).digest('hex');
+  }
+
+  /**
+   * Check cache for existing match result
+   */
+  private static getCachedMatch(cacheKey: string): JobMatchResult | null {
+    const entry = this.cache.get(cacheKey);
+    if (!entry) return null;
+
+    // Check if cache entry is still valid
+    if (Date.now() - entry.timestamp > this.CACHE_TTL) {
+      this.cache.delete(cacheKey);
+      return null;
+    }
+
+    this.metrics.cacheHits++;
+    this.metrics.tokensSaved += this.MAX_TOKENS; // Estimate tokens saved
+    return entry.result;
+  }
+
+  /**
+   * Store result in cache
+   */
+  private static setCachedMatch(cacheKey: string, result: JobMatchResult): void {
+    this.cache.set(cacheKey, {
+      result,
+      timestamp: Date.now(),
+      hash: cacheKey
+    });
+
+    // Clean old entries if cache gets too large
+    if (this.cache.size > 2000) {
+      const entries = Array.from(this.cache.entries());
+      entries.sort((a, b) => a[1].timestamp - b[1].timestamp);
+      const toRemove = entries.slice(0, 400); // Remove oldest 400 entries
+      toRemove.forEach(([key]) => this.cache.delete(key));
+    }
+  }
+
+  /**
+   * Sleep utility for retry delays
+   */
+  private static sleep(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  /**
+   * Track user behavior for personalized recommendations
+   */
+  static trackUserBehavior(userId: string, action: string, jobId: string, metadata?: any): void {
+    if (!this.userBehavior.has(userId)) {
+      this.userBehavior.set(userId, {
+        appliedJobs: [],
+        viewedJobs: [],
+        savedJobs: [],
+        rejectedJobs: [],
+        preferredCompanies: [],
+        preferredJobTypes: [],
+        averageViewTime: 0
+      });
+    }
+
+    const behavior = this.userBehavior.get(userId)!;
+
+    switch (action) {
+      case 'apply':
+        if (!behavior.appliedJobs.includes(jobId)) {
+          behavior.appliedJobs.push(jobId);
+        }
+        break;
+      case 'view':
+        if (!behavior.viewedJobs.includes(jobId)) {
+          behavior.viewedJobs.push(jobId);
+        }
+        if (metadata?.viewTime) {
+          behavior.averageViewTime = (behavior.averageViewTime + metadata.viewTime) / 2;
+        }
+        break;
+      case 'save':
+        if (!behavior.savedJobs.includes(jobId)) {
+          behavior.savedJobs.push(jobId);
+        }
+        break;
+      case 'reject':
+        if (!behavior.rejectedJobs.includes(jobId)) {
+          behavior.rejectedJobs.push(jobId);
+        }
+        break;
+    }
+
+    // Keep only recent behavior (last 1000 actions per type)
+    Object.keys(behavior).forEach(key => {
+      if (Array.isArray(behavior[key as keyof UserBehaviorData])) {
+        const arr = behavior[key as keyof UserBehaviorData] as string[];
+        if (arr.length > 1000) {
+          behavior[key as keyof UserBehaviorData] = arr.slice(-1000) as any;
+        }
+      }
+    });
+  }
+
+  /**
+   * Get personalized score boost based on user behavior
+   */
+  private static getPersonalizedBoost(userId: string, job: Job): number {
+    const behavior = this.userBehavior.get(userId);
+    if (!behavior) return 0;
+
+    let boost = 0;
+
+    // Boost similar companies
+    if (behavior.preferredCompanies.includes(job.company)) {
+      boost += 15;
+    }
+
+    // Boost similar job types
+    if (behavior.preferredJobTypes.some(type => job.type.toLowerCase().includes(type.toLowerCase()))) {
+      boost += 10;
+    }
+
+    // Penalize if user has rejected similar jobs
+    if (behavior.rejectedJobs.length > 0) {
+      // This would require job similarity analysis, simplified for now
+      boost -= 5;
+    }
+
+    // Boost if user has applied to similar positions
+    if (behavior.appliedJobs.length > 0) {
+      boost += 5;
+    }
+
+    return Math.max(-20, Math.min(20, boost)); // Cap boost between -20 and +20
+  }
+
+  /**
+   * Enhanced job matching with caching, batch processing, and personalization
+   */
   static async findMatchedJobs(cv: Cv, jobs: Job[], preferences?: {
     preferredLocation?: string;
     salaryExpectation?: string;
     preferredJobTypes?: string[];
+    userId?: string;
   }): Promise<JobMatchResult[]> {
+    const startTime = Date.now();
+    this.metrics.totalRequests += jobs.length;
+
     if (!cv.parsedData) {
       throw new Error('CV must be parsed before job matching');
     }
 
     const matches: JobMatchResult[] = [];
+    const uncachedJobs: Job[] = [];
+    const cachedResults: JobMatchResult[] = [];
 
-    if (JobMatchingService.isAvailable()) {
-      try {
-        // Use AI matching for better results
-        for (const job of jobs) {
-          const matchResult = await JobMatchingService.matchJobWithAI(cv, job, preferences);
-          matches.push(matchResult);
+    // Check cache for existing results
+    for (const job of jobs) {
+      const cacheKey = this.generateMatchCacheKey(cv.id, job.id, preferences);
+      const cachedMatch = this.getCachedMatch(cacheKey);
+      
+      if (cachedMatch) {
+        // Apply personalization boost to cached results
+        if (preferences?.userId) {
+          const personalizedMatch = this.applyPersonalization(cachedMatch, preferences.userId);
+          cachedResults.push(personalizedMatch);
+        } else {
+          cachedResults.push(cachedMatch);
         }
-      } catch (error) {
-        console.warn('AI matching failed, falling back to basic matching:', error);
-        // Fall back to basic matching
-        for (const job of jobs) {
-          const matchResult = JobMatchingService.matchJobBasic(cv, job, preferences);
-          matches.push(matchResult);
-        }
-      }
-    } else {
-      console.log('OpenAI not available, using basic matching');
-      // Use basic matching
-      for (const job of jobs) {
-        const matchResult = JobMatchingService.matchJobBasic(cv, job, preferences);
-        matches.push(matchResult);
+      } else {
+        uncachedJobs.push(job);
       }
     }
 
+    // Process uncached jobs
+    if (uncachedJobs.length > 0) {
+      if (this.isAvailable()) {
+        try {
+          // Use batch processing for better efficiency
+          const newMatches = await this.batchMatchJobs(cv, uncachedJobs, preferences);
+          matches.push(...newMatches);
+        } catch (error) {
+          console.warn('AI batch matching failed, falling back to basic matching:', error);
+          // Fall back to basic matching for uncached jobs
+          for (const job of uncachedJobs) {
+            const matchResult = this.matchJobBasic(cv, job, preferences);
+            matches.push(matchResult);
+          }
+        }
+      } else {
+        console.log('OpenAI not available, using basic matching');
+        // Use basic matching for uncached jobs
+        for (const job of uncachedJobs) {
+          const matchResult = this.matchJobBasic(cv, job, preferences);
+          matches.push(matchResult);
+        }
+      }
+    }
+
+    // Combine cached and new results
+    const allMatches = [...cachedResults, ...matches];
+
+    // Update metrics
+    const processingTime = Date.now() - startTime;
+    this.metrics.avgResponseTime = 
+      (this.metrics.avgResponseTime * (this.metrics.totalRequests - jobs.length) + processingTime) / this.metrics.totalRequests;
+
     // Sort by match score (highest first) and return top matches
-    return matches
+    return allMatches
       .sort((a, b) => b.matchScore - a.matchScore)
       .filter(match => match.matchScore > 20); // Filter out very low matches
+  }
+
+  /**
+   * Apply personalization boost to match results
+   */
+  private static applyPersonalization(match: JobMatchResult, userId: string): JobMatchResult {
+    const personalizedBoost = this.getPersonalizedBoost(userId, match.job);
+    
+    if (personalizedBoost !== 0) {
+      this.metrics.personalizedRecommendations++;
+      
+      return {
+        ...match,
+        matchScore: Math.max(0, Math.min(100, match.matchScore + personalizedBoost))
+      };
+    }
+    
+    return match;
+  }
+
+  /**
+   * Batch process multiple job matches for improved efficiency
+   */
+  private static async batchMatchJobs(cv: Cv, jobs: Job[], preferences?: any): Promise<JobMatchResult[]> {
+    const results: JobMatchResult[] = [];
+    this.metrics.batchedRequests += jobs.length;
+
+    // Process jobs in batches
+    for (let i = 0; i < jobs.length; i += this.BATCH_SIZE) {
+      const batch = jobs.slice(i, i + this.BATCH_SIZE);
+      
+      try {
+        // Process batch with retry logic
+        const batchResults = await this.processBatchWithRetry(cv, batch, preferences);
+        results.push(...batchResults);
+        
+        // Cache successful results
+        batchResults.forEach(result => {
+          const cacheKey = this.generateMatchCacheKey(cv.id, result.job.id, preferences);
+          this.setCachedMatch(cacheKey, result);
+        });
+      } catch (error) {
+        console.error('Batch processing failed, falling back to individual processing:', error);
+        
+        // Fall back to individual processing for this batch
+        for (const job of batch) {
+          try {
+            const result = await this.matchJobWithAI(cv, job, preferences);
+            results.push(result);
+            
+            const cacheKey = this.generateMatchCacheKey(cv.id, job.id, preferences);
+            this.setCachedMatch(cacheKey, result);
+          } catch (jobError) {
+            console.warn(`Individual job matching failed for ${job.id}, using basic matching:`, jobError);
+            const basicResult = this.matchJobBasic(cv, job, preferences);
+            results.push(basicResult);
+          }
+        }
+      }
+      
+      // Add delay between batches to respect rate limits
+      if (i + this.BATCH_SIZE < jobs.length) {
+        await this.sleep(500);
+      }
+    }
+
+    return results;
+  }
+
+  /**
+   * Process batch with retry logic
+   */
+  private static async processBatchWithRetry(cv: Cv, jobs: Job[], preferences?: any): Promise<JobMatchResult[]> {
+    let retryCount = 0;
+    let lastError: Error | null = null;
+
+    while (retryCount <= this.MAX_RETRIES) {
+      try {
+        return await this.processBatch(cv, jobs, preferences);
+      } catch (error) {
+        lastError = error as Error;
+        retryCount++;
+        this.metrics.retryCount++;
+        
+        if (retryCount <= this.MAX_RETRIES) {
+          const delay = this.RETRY_DELAY_BASE * Math.pow(2, retryCount - 1) + Math.random() * 1000;
+          console.warn(`Batch processing attempt ${retryCount} failed, retrying in ${delay}ms:`, error);
+          await this.sleep(delay);
+        }
+      }
+    }
+
+    throw lastError || new Error('Batch processing failed after all retries');
+  }
+
+  /**
+   * Process a batch of jobs with optimized AI calls
+   */
+  private static async processBatch(cv: Cv, jobs: Job[], preferences?: any): Promise<JobMatchResult[]> {
+    // For now, process jobs individually but with optimized prompts
+    // In the future, this could be enhanced to use a single AI call for multiple jobs
+    const results: JobMatchResult[] = [];
+    
+    for (const job of jobs) {
+      const result = await this.performOptimizedJobMatch(cv, job, preferences);
+      results.push(result);
+    }
+    
+    return results;
+  }
+
+  /**
+   * Perform optimized job matching with efficient prompts
+   */
+  private static async performOptimizedJobMatch(cv: Cv, job: Job, preferences?: any): Promise<JobMatchResult> {
+    const cvData = cv.parsedData as ParsedCVData;
+    const userPreferences = preferences || {};
+
+    // Optimized system prompt for better token efficiency
+    const systemPrompt = "Analyze job-candidate compatibility. Return JSON with matchScore (0-100), explanation, skillsMatch {matched[], missing[], score}, experienceMatch {suitable, explanation, score}, locationMatch {suitable, explanation, score}, salaryMatch {suitable, explanation, score}.";
+    
+    // Optimized user prompt with truncated content
+    const candidateSkills = cvData.skills?.slice(0, 15).join(', ') || 'Not specified';
+    const jobReqs = (job.requirements || []).slice(0, 10).join(', ') || 'Not specified';
+    
+    const userPrompt = `Job: ${job.title} at ${job.company}
+Location: ${job.location}
+Requirements: ${jobReqs}
+Salary: ${job.salary || 'Not specified'}
+
+Candidate Skills: ${candidateSkills}
+Experience: ${(cvData.experience || '').substring(0, 300)}
+Location: ${cvData.location || 'Not specified'}
+
+User Preferences:
+- Location: ${userPreferences.preferredLocation || 'Any'}
+- Salary: ${userPreferences.salaryExpectation || 'Not specified'}
+- Job Types: ${userPreferences.preferredJobTypes?.join(', ') || 'Any'}
+
+Analyze compatibility as JSON.`;
+
+    try {
+      const response = await openai!.chat.completions.create({
+        model: "gpt-5",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt }
+        ],
+        response_format: { type: "json_object" },
+        temperature: this.TEMPERATURE,
+        max_tokens: this.MAX_TOKENS
+      });
+
+      const content = response.choices[0]?.message?.content;
+      if (!content) {
+        throw new Error('Empty response from OpenAI');
+      }
+
+      const matchData = JSON.parse(content);
+
+      return {
+        job,
+        matchScore: Math.max(0, Math.min(100, matchData.matchScore || 0)),
+        explanation: matchData.explanation || 'AI analysis completed',
+        skillsMatch: {
+          matched: Array.isArray(matchData.skillsMatch?.matched) ? matchData.skillsMatch.matched : [],
+          missing: Array.isArray(matchData.skillsMatch?.missing) ? matchData.skillsMatch.missing : [],
+          score: Math.max(0, Math.min(100, matchData.skillsMatch?.score || 0))
+        },
+        experienceMatch: {
+          suitable: !!matchData.experienceMatch?.suitable,
+          explanation: matchData.experienceMatch?.explanation || 'Experience compatibility analyzed',
+          score: Math.max(0, Math.min(100, matchData.experienceMatch?.score || 0))
+        },
+        locationMatch: {
+          suitable: !!matchData.locationMatch?.suitable,
+          explanation: matchData.locationMatch?.explanation || 'Location compatibility analyzed',
+          score: Math.max(0, Math.min(100, matchData.locationMatch?.score || 0))
+        },
+        salaryMatch: {
+          suitable: !!matchData.salaryMatch?.suitable,
+          explanation: matchData.salaryMatch?.explanation || 'Salary compatibility analyzed',
+          score: Math.max(0, Math.min(100, matchData.salaryMatch?.score || 0))
+        }
+      };
+    } catch (error) {
+      console.error('Optimized AI matching error:', error);
+      // Fall back to basic matching if AI fails
+      return this.matchJobBasic(cv, job, preferences);
+    }
   }
 
   private static async matchJobWithAI(cv: Cv, job: Job, preferences?: any): Promise<JobMatchResult> {
@@ -460,6 +898,46 @@ Consider:
       
       return scoreB - scoreA;
     });
+  }
+
+  /**
+   * Clear job matching cache manually
+   */
+  static clearCache(): void {
+    this.cache.clear();
+    console.log('Job matching cache cleared');
+  }
+
+  /**
+   * Get cache statistics
+   */
+  static getCacheStats() {
+    return {
+      size: this.cache.size,
+      entries: Array.from(this.cache.values()).map(entry => ({
+        hash: entry.hash.substring(0, 8),
+        timestamp: entry.timestamp,
+        age: Date.now() - entry.timestamp
+      }))
+    };
+  }
+
+  /**
+   * Get user behavior data
+   */
+  static getUserBehavior(userId: string): UserBehaviorData | null {
+    return this.userBehavior.get(userId) || null;
+  }
+
+  /**
+   * Clear user behavior data
+   */
+  static clearUserBehavior(userId?: string): void {
+    if (userId) {
+      this.userBehavior.delete(userId);
+    } else {
+      this.userBehavior.clear();
+    }
   }
 
   static async searchJobs(

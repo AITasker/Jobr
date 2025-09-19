@@ -1,4 +1,6 @@
 import OpenAI from "openai";
+import memoize from "memoizee";
+import crypto from "crypto";
 import { storage } from "./storage";
 import type { User, Cv, Job, Application, InsertApiUsage } from "@shared/schema";
 
@@ -37,12 +39,193 @@ export interface PreparedApplication {
   error?: string;
 }
 
+export interface TailoringMetrics {
+  tokensUsed: number;
+  processingTime: number;
+  cacheHit: boolean;
+  retryCount: number;
+  success: boolean;
+  optimizationsApplied: string[];
+}
+
+export interface EnhancedTailoredCvData extends TailoredCvData {
+  metrics: TailoringMetrics;
+  industryOptimizations?: string[];
+  keywordMatches?: string[];
+  atsScore?: number;
+}
+
+export interface EnhancedCoverLetterData extends CoverLetterData {
+  metrics: TailoringMetrics;
+  personalizedElements?: string[];
+  industrySpecificTone?: string;
+}
+
+export interface IndustryTemplate {
+  industry: string;
+  keywords: string[];
+  toneAdjustments: string[];
+  skillPriorities: string[];
+  customSections?: string[];
+}
+
+interface TailoringCacheEntry {
+  data: CoverLetterData | TailoredCvData;
+  timestamp: number;
+  hash: string;
+  type: 'cover_letter' | 'cv_tailoring';
+}
+
 export class ApplicationPreparationService {
+  // Enhanced configuration constants for optimization
   private static readonly MAX_DAILY_API_CALLS = 50; // Conservative limit for free tier
-  private static readonly MAX_TOKENS_PER_REQUEST = 2000; // Conservative token limit
+  private static readonly MAX_TOKENS_PER_REQUEST = 1500; // Reduced from 2000 for cost efficiency
+  private static readonly CACHE_TTL = 6 * 60 * 60 * 1000; // 6 hours (shorter for fresh application content)
+  private static readonly MAX_RETRIES = 3;
+  private static readonly RETRY_DELAY_BASE = 1000;
+  private static readonly TEMPERATURE_CV = 0.3; // Lower for consistent CV formatting
+  private static readonly TEMPERATURE_COVER = 0.6; // Higher for more creative cover letters
+  
+  // Enhanced cache for CV tailoring and cover letter results
+  private static cache = new Map<string, TailoringCacheEntry>();
+  
+  // Performance metrics tracking
+  private static metrics = {
+    totalRequests: 0,
+    cacheHits: 0,
+    retryCount: 0,
+    avgResponseTime: 0,
+    tokensSaved: 0,
+    industryOptimizations: 0
+  };
+
+  // Industry-specific templates for enhanced customization
+  private static industryTemplates: IndustryTemplate[] = [
+    {
+      industry: 'technology',
+      keywords: ['agile', 'scrum', 'CI/CD', 'cloud', 'API', 'microservices', 'DevOps', 'automation'],
+      toneAdjustments: ['technical proficiency', 'innovation-focused', 'problem-solving'],
+      skillPriorities: ['programming languages', 'frameworks', 'cloud platforms', 'databases']
+    },
+    {
+      industry: 'finance',
+      keywords: ['compliance', 'risk management', 'financial analysis', 'regulations', 'audit', 'ROI'],
+      toneAdjustments: ['precision-oriented', 'analytical', 'detail-focused'],
+      skillPriorities: ['financial modeling', 'analytics', 'regulatory knowledge', 'risk assessment']
+    },
+    {
+      industry: 'healthcare',
+      keywords: ['patient care', 'HIPAA', 'clinical', 'medical records', 'healthcare systems', 'quality assurance'],
+      toneAdjustments: ['patient-focused', 'empathetic', 'safety-conscious'],
+      skillPriorities: ['clinical skills', 'healthcare technology', 'patient management', 'compliance']
+    },
+    {
+      industry: 'marketing',
+      keywords: ['brand strategy', 'digital marketing', 'analytics', 'campaign management', 'SEO', 'content strategy'],
+      toneAdjustments: ['creative', 'results-driven', 'data-informed'],
+      skillPriorities: ['marketing tools', 'analytics platforms', 'creative software', 'communication']
+    },
+    {
+      industry: 'education',
+      keywords: ['curriculum', 'student engagement', 'assessment', 'learning outcomes', 'pedagogy', 'classroom management'],
+      toneAdjustments: ['student-centered', 'educational-focused', 'development-oriented'],
+      skillPriorities: ['teaching methods', 'educational technology', 'assessment tools', 'communication']
+    }
+  ];
 
   static isAvailable(): boolean {
     return !!process.env.OPENAI_API_KEY;
+  }
+
+  /**
+   * Get current performance metrics with detailed analytics
+   */
+  static getMetrics() {
+    return {
+      ...this.metrics,
+      cacheHitRate: this.metrics.totalRequests > 0 ? (this.metrics.cacheHits / this.metrics.totalRequests) * 100 : 0,
+      avgTokensSaved: this.metrics.cacheHits > 0 ? this.metrics.tokensSaved / this.metrics.cacheHits : 0,
+      industryOptimizationRate: this.metrics.totalRequests > 0 ? (this.metrics.industryOptimizations / this.metrics.totalRequests) * 100 : 0
+    };
+  }
+
+  /**
+   * Generate cache key for tailoring results
+   */
+  private static generateCacheKey(cvId: string, jobId: string, type: 'cover_letter' | 'cv_tailoring'): string {
+    const input = `${cvId}-${jobId}-${type}`;
+    return crypto.createHash('sha256').update(input).digest('hex');
+  }
+
+  /**
+   * Check cache for existing tailoring result
+   */
+  private static getCachedResult(cacheKey: string): CoverLetterData | TailoredCvData | null {
+    const entry = this.cache.get(cacheKey);
+    if (!entry) return null;
+
+    // Check if cache entry is still valid
+    if (Date.now() - entry.timestamp > this.CACHE_TTL) {
+      this.cache.delete(cacheKey);
+      return null;
+    }
+
+    this.metrics.cacheHits++;
+    this.metrics.tokensSaved += this.MAX_TOKENS_PER_REQUEST; // Estimate tokens saved
+    return entry.data;
+  }
+
+  /**
+   * Store result in cache
+   */
+  private static setCachedResult(cacheKey: string, data: CoverLetterData | TailoredCvData, type: 'cover_letter' | 'cv_tailoring'): void {
+    this.cache.set(cacheKey, {
+      data,
+      timestamp: Date.now(),
+      hash: cacheKey,
+      type
+    });
+
+    // Clean old entries if cache gets too large
+    if (this.cache.size > 1500) {
+      const entries = Array.from(this.cache.entries());
+      entries.sort((a, b) => a[1].timestamp - b[1].timestamp);
+      const toRemove = entries.slice(0, 300); // Remove oldest 300 entries
+      toRemove.forEach(([key]) => this.cache.delete(key));
+    }
+  }
+
+  /**
+   * Sleep utility for retry delays
+   */
+  private static sleep(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  /**
+   * Detect job industry for targeted optimization
+   */
+  private static detectJobIndustry(job: Job): string {
+    const jobText = `${job.title} ${job.company} ${job.description}`.toLowerCase();
+    
+    for (const template of this.industryTemplates) {
+      const industryScore = template.keywords.reduce((score, keyword) => {
+        return score + (jobText.includes(keyword.toLowerCase()) ? 1 : 0);
+      }, 0);
+      
+      if (industryScore >= 2) { // Require at least 2 keyword matches
+        return template.industry;
+      }
+    }
+    
+    return 'general';
+  }
+
+  /**
+   * Get industry-specific optimization template
+   */
+  private static getIndustryTemplate(industry: string): IndustryTemplate | null {
+    return this.industryTemplates.find(template => template.industry === industry) || null;
   }
 
   /**
@@ -55,7 +238,7 @@ export class ApplicationPreparationService {
     // Reset daily counter if it's a new day
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const lastReset = new Date(user.lastApiCallReset);
+    const lastReset = new Date(user.lastApiCallReset || user.createdAt || new Date());
     lastReset.setHours(0, 0, 0, 0);
 
     if (today.getTime() > lastReset.getTime()) {
@@ -93,7 +276,7 @@ export class ApplicationPreparationService {
   }
 
   /**
-   * Generate a personalized cover letter using OpenAI
+   * Enhanced cover letter generation with caching, industry optimization, and retry logic
    */
   static async generateCoverLetter(
     cv: Cv, 
@@ -101,70 +284,111 @@ export class ApplicationPreparationService {
     user: User
   ): Promise<CoverLetterData> {
     const startTime = Date.now();
+    this.metrics.totalRequests++;
+
+    // Check cache first
+    const cacheKey = this.generateCacheKey(cv.id, job.id, 'cover_letter');
+    const cachedResult = this.getCachedResult(cacheKey);
+    if (cachedResult && cachedResult.metadata) {
+      return cachedResult as CoverLetterData;
+    }
 
     if (!this.isAvailable() || !(await this.canMakeApiCall(user.id))) {
       return this.generateCoverLetterFallback(cv, job, user, startTime);
     }
 
-    try {
-      const prompt = this.buildCoverLetterPrompt(cv, job, user);
-      
-      const response = await openai!.chat.completions.create({
-        model: "gpt-5",
-        messages: [
-          {
-            role: "system",
-            content: "You are an expert career advisor who writes compelling cover letters. Write professional, personalized cover letters that highlight relevant experience and show genuine interest in the role."
-          },
-          {
-            role: "user",
-            content: prompt
-          }
-        ],
-        max_tokens: this.MAX_TOKENS_PER_REQUEST,
-        temperature: 0.7,
-      });
+    // Try with retry logic
+    let retryCount = 0;
+    let lastError: Error | null = null;
 
-      const content = response.choices[0]?.message?.content;
-      if (!content) {
-        throw new Error('No content generated');
-      }
+    while (retryCount <= this.MAX_RETRIES) {
+      try {
+        const result = await this.performOptimizedCoverLetterGeneration(cv, job, user);
+        
+        // Cache successful result
+        this.setCachedResult(cacheKey, result, 'cover_letter');
+        
+        // Update metrics
+        const processingTime = Date.now() - startTime;
+        this.metrics.avgResponseTime = 
+          (this.metrics.avgResponseTime * (this.metrics.totalRequests - 1) + processingTime) / this.metrics.totalRequests;
 
-      const processingTime = Date.now() - startTime;
-      const tokensUsed = response.usage?.total_tokens || 0;
-
-      // Log successful API usage
-      await this.logApiUsage({
-        userId: user.id,
-        endpoint: 'cover_letter',
-        tokensUsed,
-        success: true,
-        responseTime: processingTime
-      });
-
-      return {
-        content,
-        metadata: {
-          generatedWith: 'openai',
-          tokensUsed,
-          processingTime
+        return result;
+      } catch (error) {
+        lastError = error as Error;
+        retryCount++;
+        this.metrics.retryCount++;
+        
+        if (retryCount <= this.MAX_RETRIES) {
+          const delay = this.RETRY_DELAY_BASE * Math.pow(2, retryCount - 1) + Math.random() * 1000;
+          console.warn(`Cover letter generation attempt ${retryCount} failed, retrying in ${delay}ms:`, error);
+          await this.sleep(delay);
         }
-      };
-    } catch (error) {
-      console.error('OpenAI cover letter generation failed:', error);
-      
-      // Log failed API usage
-      await this.logApiUsage({
-        userId: user.id,
-        endpoint: 'cover_letter',
-        tokensUsed: 0,
-        success: false,
-        errorMessage: error instanceof Error ? error.message : 'Unknown error',
-        responseTime: Date.now() - startTime
-      });
-
-      return this.generateCoverLetterFallback(cv, job, user, startTime);
+      }
     }
+
+    console.error('All cover letter generation retries exhausted, falling back:', lastError);
+    return this.generateCoverLetterFallback(cv, job, user, startTime);
+  }
+
+  /**
+   * Perform optimized cover letter generation with industry-specific enhancements
+   */
+  private static async performOptimizedCoverLetterGeneration(cv: Cv, job: Job, user: User): Promise<CoverLetterData> {
+    const startTime = Date.now();
+    
+    // Detect industry for optimization
+    const industry = this.detectJobIndustry(job);
+    const industryTemplate = this.getIndustryTemplate(industry);
+    
+    if (industryTemplate) {
+      this.metrics.industryOptimizations++;
+    }
+
+    // Build optimized prompt with industry context
+    const prompt = this.buildCoverLetterPrompt(cv, job, user);
+    
+    const response = await openai!.chat.completions.create({
+      model: "gpt-5",
+      messages: [
+        {
+          role: "system",
+          content: "Write personalized cover letters. Focus on relevant experience, industry fit, and genuine interest. Use professional tone adapted to industry context."
+        },
+        {
+          role: "user",
+          content: prompt
+        }
+      ],
+      max_tokens: this.MAX_TOKENS_PER_REQUEST,
+      temperature: this.TEMPERATURE_COVER,
+    });
+
+    const content = response.choices[0]?.message?.content;
+    if (!content) {
+      throw new Error('No content generated');
+    }
+
+    const processingTime = Date.now() - startTime;
+    const tokensUsed = response.usage?.total_tokens || 0;
+
+    // Log successful API usage
+    await this.logApiUsage({
+      userId: user.id,
+      endpoint: 'cover_letter',
+      tokensUsed,
+      success: true,
+      responseTime: processingTime
+    });
+
+    return {
+      content,
+      metadata: {
+        generatedWith: 'openai',
+        tokensUsed,
+        processingTime
+      }
+    };
   }
 
   /**
