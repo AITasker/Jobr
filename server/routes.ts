@@ -64,27 +64,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Initialize Passport
   app.use(passport.initialize());
   
-  // Configure Google OAuth Strategy
+  // Configure Google OAuth Strategy and track initialization success
+  let googleStrategyInitialized = false;
+  
   if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
-    passport.use(new GoogleStrategy({
-      clientID: process.env.GOOGLE_CLIENT_ID,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-      callbackURL: '/api/auth/google/callback'
-    }, async (accessToken, refreshToken, profile, done) => {
-      try {
-        const result = await AuthService.handleGoogleAuth(profile, accessToken);
-        if (result.success && result.user && result.token) {
-          return done(null, { user: result.user, token: result.token });
-        } else {
-          return done(new Error(result.error || 'Google authentication failed'));
+    try {
+      passport.use(new GoogleStrategy({
+        clientID: process.env.GOOGLE_CLIENT_ID,
+        clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+        callbackURL: '/api/auth/google/callback'
+      }, async (accessToken, refreshToken, profile, done) => {
+        try {
+          const result = await AuthService.handleGoogleAuth(profile, accessToken);
+          if (result.success && result.user && result.token) {
+            return done(null, { user: result.user, token: result.token });
+          } else {
+            return done(new Error(result.error || 'Google authentication failed'));
+          }
+        } catch (error) {
+          return done(error);
         }
-      } catch (error) {
-        return done(error);
-      }
-    }));
+      }));
+      googleStrategyInitialized = true;
+      console.log('Google OAuth enabled: true');
+    } catch (error) {
+      console.error('Failed to initialize Google OAuth strategy:', error);
+      console.log('Google OAuth enabled: false');
+    }
   } else {
-    console.warn('Google OAuth not configured. Missing GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET.');
+    console.log('Google OAuth enabled: false - Missing GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET');
   }
+  
+  // Verify strategy is actually registered with passport
+  const googleEnabled = googleStrategyInitialized && ((passport as any)._strategies?.google != null);
 
   // Auth middleware
   await setupAuth(app);
@@ -239,36 +251,117 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Google OAuth routes
-  app.get('/api/auth/google', 
-    authRateLimit,
-    passport.authenticate('google', { 
-      scope: ['profile', 'email'],
-      session: false 
-    })
-  );
-
-  app.get('/api/auth/google/callback',
-    authRateLimit,
-    passport.authenticate('google', { session: false }),
-    async (req: any, res) => {
-      try {
-        const authData = req.user;
-        if (!authData || !authData.user || !authData.token) {
-          return res.redirect('/auth/error?message=Google authentication failed');
+  // Integration status endpoint for frontend to check available services
+  app.get('/api/integrations/status', (req, res) => {
+    try {
+      const integrations = {
+        openai: {
+          available: !!process.env.OPENAI_API_KEY,
+          features: ['cv_parsing', 'job_matching', 'ai_assistance'],
+          fallback: process.env.OPENAI_API_KEY ? null : 'basic_parsing'
+        },
+        google_oauth: {
+          available: googleEnabled,
+          features: ['social_login'],
+          fallback: 'email_password_login'
+        },
+        stripe: {
+          available: !!process.env.STRIPE_SECRET_KEY,
+          features: ['subscription_payments', 'billing_management'],
+          fallback: 'phonepe_payments'
+        },
+        phonepe: {
+          available: !!(process.env.PHONEPE_MERCHANT_ID && process.env.PHONEPE_SALT_KEY),
+          features: ['indian_payments', 'subscription_management'],
+          fallback: process.env.PHONEPE_MERCHANT_ID && process.env.PHONEPE_SALT_KEY ? null : 'test_mode',
+          test_mode: !(process.env.PHONEPE_MERCHANT_ID && process.env.PHONEPE_SALT_KEY)
+        },
+        sendgrid: {
+          available: !!process.env.SENDGRID_API_KEY,
+          features: ['email_notifications', 'password_reset', 'email_verification'],
+          fallback: 'console_logging'
         }
+      };
 
-        // Set JWT cookie
-        JwtUtils.setTokenCookie(res, authData.token);
+      const summary = {
+        total_integrations: Object.keys(integrations).length,
+        available: Object.values(integrations).filter(i => i.available).length,
+        missing: Object.values(integrations).filter(i => !i.available).length,
+        core_functional: integrations.openai.available, // Core AI functionality status
+        payments_functional: integrations.stripe.available || integrations.phonepe.available
+      };
 
-        // Redirect to dashboard on success
-        res.redirect('/dashboard?auth=google');
-      } catch (error) {
-        console.error("Google auth callback error:", error);
-        res.redirect('/auth/error?message=Authentication failed');
-      }
+      res.json({
+        success: true,
+        summary,
+        integrations,
+        recommendations: [
+          !integrations.openai.available && "Configure OPENAI_API_KEY for full AI functionality",
+          !integrations.google_oauth.available && "Configure Google OAuth for social login",
+          !integrations.stripe.available && !integrations.phonepe.available && "Configure payment provider for subscriptions",
+          !integrations.sendgrid.available && "Configure SendGrid for email services"
+        ].filter(Boolean)
+      });
+    } catch (error) {
+      console.error("Integration status error:", error);
+      res.status(500).json({
+        message: "Failed to fetch integration status",
+        code: "INTEGRATION_STATUS_ERROR"
+      });
     }
-  );
+  });
+
+  // Google OAuth routes - only register if strategy is properly initialized
+  if (googleEnabled) {
+    app.get('/api/auth/google', 
+      authRateLimit,
+      passport.authenticate('google', { 
+        scope: ['profile', 'email'],
+        session: false 
+      })
+    );
+
+    app.get('/api/auth/google/callback',
+      authRateLimit,
+      passport.authenticate('google', { session: false }),
+      async (req: any, res) => {
+        try {
+          const authData = req.user;
+          if (!authData || !authData.user || !authData.token) {
+            return res.redirect('/auth/error?message=Google authentication failed');
+          }
+
+          // Set JWT cookie
+          JwtUtils.setTokenCookie(res, authData.token);
+
+          // Redirect to dashboard on success
+          res.redirect('/dashboard?auth=google');
+        } catch (error) {
+          console.error("Google auth callback error:", error);
+          res.redirect('/auth/error?message=Authentication failed');
+        }
+      }
+    );
+  } else {
+    // Provide 503 error responses when Google OAuth strategy is not available
+    app.get('/api/auth/google', authRateLimit, (req, res) => {
+      res.status(503).json({
+        message: "Google OAuth service is currently unavailable. Please use email/password login or try again later.",
+        code: "GOOGLE_OAUTH_UNAVAILABLE",
+        integration: "google_oauth",
+        available: false
+      });
+    });
+
+    app.get('/api/auth/google/callback', authRateLimit, (req, res) => {
+      res.status(503).json({
+        message: "Google OAuth service is currently unavailable. Please use email/password login or try again later.",
+        code: "GOOGLE_OAUTH_UNAVAILABLE",
+        integration: "google_oauth",
+        available: false
+      });
+    });
+  }
 
   // Phone OTP routes
   app.post('/api/auth/phone/request', authRateLimit, async (req: any, res) => {
