@@ -158,8 +158,8 @@ export default function Dashboard() {
 
   // Get matched jobs with proper CV validation
   const { data: matchedJobsData, isLoading: matchedJobsLoading, error: matchedJobsError } = useQuery<MatchedJobsResponse>({
-    queryKey: ['/api/jobs/matched', { limit: 20 }],
-    enabled: isAuthenticated && hasCvData,
+    queryKey: ['/api/jobs/matched', cvData?.id],
+    enabled: Boolean(isAuthenticated && hasCvData && cvData?.id),
     retry: false
   })
 
@@ -737,7 +737,7 @@ export default function Dashboard() {
                         <SelectValue placeholder="Any type" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="">Any type</SelectItem>
+                        <SelectItem value="any">Any type</SelectItem>
                         <SelectItem value="Full-time">Full-time</SelectItem>
                         <SelectItem value="Part-time">Part-time</SelectItem>
                         <SelectItem value="Contract">Contract</SelectItem>
@@ -780,7 +780,7 @@ export default function Dashboard() {
                             <SelectValue placeholder="Any level" />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="">Any level</SelectItem>
+                            <SelectItem value="any">Any level</SelectItem>
                             <SelectItem value="entry-level">Entry Level (0-2 years)</SelectItem>
                             <SelectItem value="mid-level">Mid Level (2-5 years)</SelectItem>
                             <SelectItem value="senior-level">Senior Level (5-8 years)</SelectItem>
@@ -797,7 +797,7 @@ export default function Dashboard() {
                             <SelectValue placeholder="Any time" />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="">Any time</SelectItem>
+                            <SelectItem value="any">Any time</SelectItem>
                             <SelectItem value="1">Last 24 hours</SelectItem>
                             <SelectItem value="7">Last 7 days</SelectItem>
                             <SelectItem value="30">Last 30 days</SelectItem>
