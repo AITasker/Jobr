@@ -5,6 +5,7 @@ import multer from "multer";
 import rateLimit from "express-rate-limit";
 import passport from "passport";
 import { Strategy as GoogleStrategy } from "passport-google-oauth20";
+import crypto from "crypto";
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./replitAuth";
 import { FileProcessor } from "./fileProcessor";
@@ -17,6 +18,10 @@ import { ApplicationPreparationService } from "./applicationPreparationService";
 import { AuthService } from "./authService";
 import { JwtUtils } from "./jwtUtils";
 import { SubscriptionService } from "./subscriptionService";
+import { EmailMonitoringService } from "./emailMonitoringService";
+import { ApplicationLifecycleService } from "./applicationLifecycleService";
+import { NotificationService } from "./notificationService";
+import { AnalyticsService } from "./analyticsService";
 import { registerSchema, loginSchema, insertJobSchema, insertApplicationSchema, createSubscriptionSchema, updateSubscriptionSchema, phoneRequestSchema, phoneVerifySchema, jobApplySchema, cvTailorSchema, applicationUpdateSchema, batchPrepareSchema, subscriptionCancelSchema, bookmarkJobSchema, jobSearchSchema, saveSearchSchema, updatePreferencesSchema, VALID_PRICE_MAPPINGS } from "@shared/schema";
 import { createErrorResponse, ERROR_CODES } from "./utils/errorHandler";
 import { addAuthMetricsRoute } from "./authMetricsRoute";
@@ -2072,6 +2077,719 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ 
         message: "Failed to check payment status",
         code: "STATUS_CHECK_FAILED"
+      });
+    }
+  });
+
+  // =======================================
+  // COMPREHENSIVE APPLICATION TRACKING API
+  // =======================================
+
+  // Import the new services for comprehensive application management
+  // (Note: These services are imported at the top of the file)
+
+  // =======================================
+  // SENDGRID WEBHOOK SECURITY MIDDLEWARE
+  // =======================================
+
+  /**
+   * Verify SendGrid webhook signature to prevent forged events
+   */
+  const verifyWebhookSignature = (req: any, res: any, next: any) => {
+    const signature = req.headers['x-eventwebhook-signature'];
+    const timestamp = req.headers['x-eventwebhook-timestamp'];
+    const body = req.body;
+    
+    // Get webhook secret from environment
+    const webhookSecret = process.env.SENDGRID_WEBHOOK_SECRET;
+    
+    if (!webhookSecret) {
+      console.error('SendGrid webhook signature verification failed: SENDGRID_WEBHOOK_SECRET not configured');
+      return res.status(500).json({
+        success: false,
+        message: 'Webhook signature verification not configured'
+      });
+    }
+
+    if (!signature || !timestamp) {
+      console.warn('SendGrid webhook signature verification failed: Missing signature or timestamp headers');
+      return res.status(401).json({
+        success: false,
+        message: 'Missing required webhook headers'
+      });
+    }
+
+    try {
+      // Parse the signature header
+      const signatureObj = JSON.parse(signature);
+      const providedSignature = signatureObj.v1;
+      
+      if (!providedSignature) {
+        console.warn('SendGrid webhook signature verification failed: Invalid signature format');
+        return res.status(401).json({
+          success: false,
+          message: 'Invalid signature format'
+        });
+      }
+
+      // Create verification payload: timestamp + body
+      const payload = timestamp + JSON.stringify(body);
+      
+      // Generate expected signature using HMAC-SHA256
+      const expectedSignature = crypto
+        .createHmac('sha256', webhookSecret)
+        .update(payload, 'utf8')
+        .digest('base64');
+
+      // Verify signature using constant-time comparison
+      const isValidSignature = crypto.timingSafeEqual(
+        Buffer.from(providedSignature, 'base64'),
+        Buffer.from(expectedSignature, 'base64')
+      );
+
+      if (!isValidSignature) {
+        console.warn('SendGrid webhook signature verification failed: Invalid signature');
+        return res.status(401).json({
+          success: false,
+          message: 'Invalid webhook signature'
+        });
+      }
+
+      // Check for replay attacks (timestamp should be within 10 minutes)
+      const eventTimestamp = parseInt(timestamp);
+      const currentTimestamp = Math.floor(Date.now() / 1000);
+      const timeDifference = Math.abs(currentTimestamp - eventTimestamp);
+      
+      if (timeDifference > 600) { // 10 minutes
+        console.warn('SendGrid webhook signature verification failed: Timestamp too old (replay attack protection)');
+        return res.status(401).json({
+          success: false,
+          message: 'Webhook timestamp too old'
+        });
+      }
+
+      // Signature and timestamp are valid, proceed to next middleware
+      next();
+    } catch (error) {
+      console.error('SendGrid webhook signature verification error:', error);
+      return res.status(401).json({
+        success: false,
+        message: 'Webhook signature verification failed'
+      });
+    }
+  };
+
+  // =======================================
+  // EMAIL MONITORING ROUTES
+  // =======================================
+
+  // Send application email with comprehensive tracking
+  app.post('/api/applications/:id/email/send', isAuthenticated, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const userId = req.user.claims.sub;
+      const { recipientEmail, subject, htmlContent, textContent } = req.body;
+
+      // Validate input
+      if (!recipientEmail || !subject || !htmlContent) {
+        return res.status(400).json({
+          success: false,
+          message: 'recipientEmail, subject, and htmlContent are required'
+        });
+      }
+
+      // Get application
+      const application = await storage.getApplicationWithJob(id);
+      if (!application || application.userId !== userId) {
+        return res.status(404).json({
+          success: false,
+          message: 'Application not found or access denied'
+        });
+      }
+
+      // Send email with tracking
+      const result = await EmailMonitoringService.sendApplicationEmail(
+        application,
+        recipientEmail,
+        subject,
+        htmlContent,
+        textContent
+      );
+
+      res.json(result);
+    } catch (error) {
+      console.error('Error sending application email:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to send application email'
+      });
+    }
+  });
+
+  // Send follow-up email with tracking
+  app.post('/api/applications/:id/email/follow-up', isAuthenticated, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const userId = req.user.claims.sub;
+      const { recipientEmail, subject, htmlContent, textContent } = req.body;
+
+      const application = await storage.getApplicationWithJob(id);
+      if (!application || application.userId !== userId) {
+        return res.status(404).json({
+          success: false,
+          message: 'Application not found or access denied'
+        });
+      }
+
+      const result = await EmailMonitoringService.sendFollowUpEmail(
+        application,
+        recipientEmail,
+        subject,
+        htmlContent,
+        textContent
+      );
+
+      res.json(result);
+    } catch (error) {
+      console.error('Error sending follow-up email:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to send follow-up email'
+      });
+    }
+  });
+
+  // SendGrid webhook handler for email event tracking (secured with signature verification)
+  app.post('/api/email/webhook', verifyWebhookSignature, async (req: any, res) => {
+    try {
+      const events = req.body;
+      
+      if (!Array.isArray(events)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid webhook payload'
+        });
+      }
+
+      await EmailMonitoringService.handleSendGridWebhook(events);
+      
+      res.json({ success: true, processed: events.length });
+    } catch (error) {
+      console.error('Error processing SendGrid webhook:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to process webhook'
+      });
+    }
+  });
+
+  // Get email analytics for specific application
+  app.get('/api/applications/:id/email/analytics', isAuthenticated, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const userId = req.user.claims.sub;
+
+      const application = await storage.getApplicationWithJob(id);
+      if (!application || application.userId !== userId) {
+        return res.status(404).json({
+          success: false,
+          message: 'Application not found or access denied'
+        });
+      }
+
+      const analytics = await EmailMonitoringService.getEmailAnalytics(userId, [id]);
+      res.json({ success: true, analytics });
+    } catch (error) {
+      console.error('Error getting email analytics:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to get email analytics'
+      });
+    }
+  });
+
+  // Get user email analytics
+  app.get('/api/user/email/analytics', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { applicationIds, startDate, endDate } = req.query;
+
+      const dateRange = startDate && endDate ? {
+        start: new Date(startDate as string),
+        end: new Date(endDate as string)
+      } : undefined;
+
+      const applicationIdArray = applicationIds ? 
+        (applicationIds as string).split(',') : undefined;
+
+      const analytics = await EmailMonitoringService.getEmailAnalytics(
+        userId, 
+        applicationIdArray, 
+        dateRange
+      );
+      
+      res.json({ success: true, analytics });
+    } catch (error) {
+      console.error('Error getting user email analytics:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to get email analytics'
+      });
+    }
+  });
+
+  // =======================================
+  // APPLICATION LIFECYCLE MANAGEMENT ROUTES
+  // =======================================
+
+  // Update application status with comprehensive tracking
+  app.put('/api/applications/:id/status', isAuthenticated, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const userId = req.user.claims.sub;
+      const { newStatus, reason, metadata, notes, scheduledDate } = req.body;
+
+      const application = await storage.getApplicationWithJob(id);
+      if (!application || application.userId !== userId) {
+        return res.status(404).json({
+          success: false,
+          message: 'Application not found or access denied'
+        });
+      }
+
+      const result = await ApplicationLifecycleService.updateApplicationStatus({
+        applicationId: id,
+        newStatus,
+        reason,
+        metadata,
+        notes,
+        scheduledDate: scheduledDate ? new Date(scheduledDate) : undefined
+      });
+
+      res.json(result);
+    } catch (error) {
+      console.error('Error updating application status:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to update application status'
+      });
+    }
+  });
+
+  // Schedule interview with comprehensive tracking
+  app.post('/api/applications/:id/interview', isAuthenticated, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const userId = req.user.claims.sub;
+      const { interviewDate, interviewType, details } = req.body;
+
+      const application = await storage.getApplicationWithJob(id);
+      if (!application || application.userId !== userId) {
+        return res.status(404).json({
+          success: false,
+          message: 'Application not found or access denied'
+        });
+      }
+
+      const result = await ApplicationLifecycleService.scheduleInterview(
+        id,
+        new Date(interviewDate),
+        interviewType,
+        details
+      );
+
+      res.json(result);
+    } catch (error) {
+      console.error('Error scheduling interview:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to schedule interview'
+      });
+    }
+  });
+
+  // Get application insights and analytics
+  app.get('/api/applications/:id/insights', isAuthenticated, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const userId = req.user.claims.sub;
+
+      const application = await storage.getApplicationWithJob(id);
+      if (!application || application.userId !== userId) {
+        return res.status(404).json({
+          success: false,
+          message: 'Application not found or access denied'
+        });
+      }
+
+      const insights = await ApplicationLifecycleService.getApplicationInsights(id);
+      res.json({ success: true, insights });
+    } catch (error) {
+      console.error('Error getting application insights:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to get application insights'
+      });
+    }
+  });
+
+  // Get comprehensive application timeline
+  app.get('/api/applications/:id/timeline', isAuthenticated, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const userId = req.user.claims.sub;
+
+      const application = await storage.getApplicationWithJob(id);
+      if (!application || application.userId !== userId) {
+        return res.status(404).json({
+          success: false,
+          message: 'Application not found or access denied'
+        });
+      }
+
+      const timeline = await ApplicationLifecycleService.getApplicationTimeline(id);
+      res.json({ success: true, ...timeline });
+    } catch (error) {
+      console.error('Error getting application timeline:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to get application timeline'
+      });
+    }
+  });
+
+  // Withdraw application with proper cleanup
+  app.post('/api/applications/:id/withdraw', isAuthenticated, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const userId = req.user.claims.sub;
+      const { reason, notifyEmployer = false } = req.body;
+
+      const application = await storage.getApplicationWithJob(id);
+      if (!application || application.userId !== userId) {
+        return res.status(404).json({
+          success: false,
+          message: 'Application not found or access denied'
+        });
+      }
+
+      const result = await ApplicationLifecycleService.withdrawApplication(
+        id,
+        reason || 'User initiated withdrawal',
+        notifyEmployer
+      );
+
+      res.json(result);
+    } catch (error) {
+      console.error('Error withdrawing application:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to withdraw application'
+      });
+    }
+  });
+
+  // Bulk update applications
+  app.post('/api/applications/bulk-update', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { applicationIds, updates, reason } = req.body;
+
+      // Verify all applications belong to the user
+      for (const applicationId of applicationIds) {
+        const application = await storage.getApplicationWithJob(applicationId);
+        if (!application || application.userId !== userId) {
+          return res.status(403).json({
+            success: false,
+            message: `Access denied for application ${applicationId}`
+          });
+        }
+      }
+
+      const result = await ApplicationLifecycleService.bulkUpdateApplications(
+        applicationIds,
+        updates,
+        reason
+      );
+
+      res.json(result);
+    } catch (error) {
+      console.error('Error bulk updating applications:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to bulk update applications'
+      });
+    }
+  });
+
+  // =======================================
+  // NOTIFICATION MANAGEMENT ROUTES
+  // =======================================
+
+  // Get user notifications with pagination
+  app.get('/api/notifications', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { 
+        unreadOnly = 'false', 
+        limit = '20', 
+        offset = '0', 
+        type 
+      } = req.query;
+
+      const options = {
+        unreadOnly: unreadOnly === 'true',
+        limit: parseInt(limit as string),
+        offset: parseInt(offset as string),
+        type: type as string
+      };
+
+      const result = await NotificationService.getUserNotifications(userId, options);
+      res.json({ success: true, ...result });
+    } catch (error) {
+      console.error('Error getting notifications:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to get notifications'
+      });
+    }
+  });
+
+  // Mark notification as read
+  app.post('/api/notifications/:id/read', isAuthenticated, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      
+      const result = await NotificationService.markNotificationAsRead(id);
+      res.json(result);
+    } catch (error) {
+      console.error('Error marking notification as read:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to mark notification as read'
+      });
+    }
+  });
+
+  // Get notification preferences
+  app.get('/api/notifications/preferences', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      
+      const preferences = await NotificationService.initializeUserPreferences(userId);
+      res.json({ success: true, preferences });
+    } catch (error) {
+      console.error('Error getting notification preferences:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to get notification preferences'
+      });
+    }
+  });
+
+  // Update notification preferences
+  app.put('/api/notifications/preferences', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const preferences = req.body;
+      
+      const result = await NotificationService.updateUserPreferences(userId, preferences);
+      res.json(result);
+    } catch (error) {
+      console.error('Error updating notification preferences:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to update notification preferences'
+      });
+    }
+  });
+
+  // =======================================
+  // ANALYTICS AND REPORTING ROUTES
+  // =======================================
+
+  // Get comprehensive application insights
+  app.get('/api/analytics/insights', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { startDate, endDate } = req.query;
+
+      const dateRange = startDate && endDate ? {
+        start: new Date(startDate as string),
+        end: new Date(endDate as string)
+      } : undefined;
+
+      const insights = await AnalyticsService.generateApplicationInsights(userId, dateRange);
+      res.json({ success: true, insights });
+    } catch (error) {
+      console.error('Error getting application insights:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to get application insights'
+      });
+    }
+  });
+
+  // Get success rate analytics
+  app.get('/api/analytics/success-rates', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const filters = req.query;
+
+      const successRates = await AnalyticsService.trackSuccessRates(userId, filters);
+      res.json({ success: true, successRates });
+    } catch (error) {
+      console.error('Error getting success rates:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to get success rate analytics'
+      });
+    }
+  });
+
+  // Get response time analytics
+  app.get('/api/analytics/response-times', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const filters = req.query;
+
+      const responseTimes = await AnalyticsService.analyzeResponseTimes(userId, filters);
+      res.json({ success: true, responseTimes });
+    } catch (error) {
+      console.error('Error getting response time analytics:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to get response time analytics'
+      });
+    }
+  });
+
+  // Get industry-specific insights
+  app.get('/api/analytics/industry-insights/:industry', isAuthenticated, async (req: any, res) => {
+    try {
+      const { industry } = req.params;
+      const { role } = req.query;
+
+      const insights = await AnalyticsService.generateIndustryInsights(
+        industry, 
+        role as string
+      );
+      res.json({ success: true, insights });
+    } catch (error) {
+      console.error('Error getting industry insights:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to get industry insights'
+      });
+    }
+  });
+
+  // Start A/B test
+  app.post('/api/analytics/ab-test', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const testConfig = { ...req.body, userId };
+
+      const result = await AnalyticsService.runA_BTest(testConfig);
+      res.json(result);
+    } catch (error) {
+      console.error('Error starting A/B test:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to start A/B test'
+      });
+    }
+  });
+
+  // Get A/B test results
+  app.get('/api/analytics/ab-test/:testId', isAuthenticated, async (req: any, res) => {
+    try {
+      const { testId } = req.params;
+
+      const results = await AnalyticsService.analyzeA_BTestResults(testId);
+      if (!results) {
+        return res.status(404).json({
+          success: false,
+          message: 'A/B test not found'
+        });
+      }
+
+      res.json({ success: true, results });
+    } catch (error) {
+      console.error('Error getting A/B test results:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to get A/B test results'
+      });
+    }
+  });
+
+  // Get ROI analysis
+  app.get('/api/analytics/roi', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { startDate, endDate } = req.query;
+
+      if (!startDate || !endDate) {
+        return res.status(400).json({
+          success: false,
+          message: 'startDate and endDate are required'
+        });
+      }
+
+      const timeframe = {
+        start: new Date(startDate as string),
+        end: new Date(endDate as string)
+      };
+
+      const roiAnalysis = await AnalyticsService.calculateApplicationROI(userId, timeframe);
+      res.json({ success: true, roiAnalysis });
+    } catch (error) {
+      console.error('Error calculating ROI:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to calculate ROI analysis'
+      });
+    }
+  });
+
+  // Enhanced existing analytics endpoint
+  app.get('/api/applications/analytics', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const applications = await storage.getApplicationsByUserId(userId);
+
+      // Get basic analytics
+      const statusCounts = applications.reduce((counts: any, app) => {
+        counts[app.status] = (counts[app.status] || 0) + 1;
+        return counts;
+      }, {});
+
+      const totalApplications = applications.length;
+      const appliedApplications = applications.filter(app => app.status === 'applied').length;
+      const successfulApplications = applications.filter(app => 
+        ['offered', 'accepted'].includes(app.status)
+      ).length;
+
+      // Get comprehensive insights (last 90 days)
+      const comprehensiveInsights = await AnalyticsService.generateApplicationInsights(userId);
+
+      res.json({
+        success: true,
+        basic: {
+          totalApplications,
+          appliedApplications,
+          successfulApplications,
+          successRate: totalApplications > 0 ? (successfulApplications / totalApplications) * 100 : 0,
+          statusCounts
+        },
+        comprehensive: comprehensiveInsights
+      });
+    } catch (error) {
+      console.error("Error fetching application analytics:", error);
+      res.status(500).json({ 
+        success: false,
+        message: "Failed to fetch analytics" 
       });
     }
   });

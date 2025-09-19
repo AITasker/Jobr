@@ -110,23 +110,185 @@ export const applications = pgTable("applications", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   jobId: varchar("job_id").notNull().references(() => jobs.id, { onDelete: "cascade" }),
-  status: varchar("status").default("applied").notNull(), // applied, viewed, interviewing, offered, rejected
+  status: varchar("status").default("applied").notNull(), // applied, viewed, interview_scheduled, interviewing, interview_completed, offered, rejected, withdrawn
   matchScore: integer("match_score").notNull(),
   tailoredCv: text("tailored_cv"),
   coverLetter: text("cover_letter"),
   preparationStatus: varchar("preparation_status").default("pending").notNull(), // pending, preparing, ready, failed
   preparationMetadata: jsonb("preparation_metadata"), // AI generation details, fallback used, etc.
+  
+  // Enhanced email tracking
+  emailSentAt: timestamp("email_sent_at"),
   emailOpened: boolean("email_opened").default(false),
+  emailOpenedAt: timestamp("email_opened_at"),
+  emailRepliedAt: timestamp("email_replied_at"),
+  lastEmailInteractionAt: timestamp("last_email_interaction_at"),
+  
+  // Application timeline and dates
   appliedDate: timestamp("applied_date").defaultNow(),
+  viewedByEmployerAt: timestamp("viewed_by_employer_at"),
+  interviewScheduledAt: timestamp("interview_scheduled_at"),
   interviewDate: timestamp("interview_date"),
+  interviewCompletedAt: timestamp("interview_completed_at"),
+  offerReceivedAt: timestamp("offer_received_at"),
+  rejectedAt: timestamp("rejected_at"),
+  withdrawnAt: timestamp("withdrawn_at"),
+  lastStatusChangeAt: timestamp("last_status_change_at").defaultNow(),
+  
+  // Follow-up and reminders
+  nextFollowUpDate: timestamp("next_follow_up_date"),
+  followUpReminderSent: boolean("follow_up_reminder_sent").default(false),
+  autoFollowUpEnabled: boolean("auto_follow_up_enabled").default(true),
+  
+  // Employer interaction tracking
+  employerProfileViews: integer("employer_profile_views").default(0),
+  applicationDownloads: integer("application_downloads").default(0),
+  employerInteractionScore: integer("employer_interaction_score").default(0),
+  
+  // Enhanced metadata
+  applicationSource: varchar("application_source").default("career_copilot"), // career_copilot, manual, imported
+  priority: varchar("priority").default("medium"), // low, medium, high, urgent
   notes: text("notes"),
+  internalNotes: text("internal_notes"), // Private notes not shown to employer
+  tags: text("tags").array(), // User-defined tags for categorization
+  
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => ({
   uniqueUserJob: unique("unique_user_job").on(table.userId, table.jobId),
   idxApplicationsUserAppliedDate: index("idx_applications_user_applied_date").on(table.userId, table.appliedDate.desc()),
   idxApplicationsStatus: index("idx_applications_status").on(table.status),
+  idxApplicationsFollowUp: index("idx_applications_follow_up").on(table.nextFollowUpDate),
+  idxApplicationsLastStatusChange: index("idx_applications_last_status_change").on(table.lastStatusChangeAt.desc()),
+  idxApplicationsPriority: index("idx_applications_priority").on(table.priority),
 }));
+
+// Application timeline/history table for tracking status changes and milestones
+export const applicationHistory = pgTable("application_history", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  applicationId: varchar("application_id").notNull().references(() => applications.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  previousStatus: varchar("previous_status"),
+  newStatus: varchar("new_status").notNull(),
+  changeReason: varchar("change_reason"), // user_update, email_response, employer_action, system_auto
+  metadata: jsonb("metadata"), // Additional context like interview details, rejection reason, etc.
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_application_history_application_id").on(table.applicationId),
+  index("idx_application_history_user_created").on(table.userId, table.createdAt.desc()),
+  index("idx_application_history_status").on(table.newStatus),
+]);
+
+// Email tracking events for comprehensive email monitoring
+export const emailEvents = pgTable("email_events", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  applicationId: varchar("application_id").notNull().references(() => applications.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  eventType: varchar("event_type").notNull(), // sent, delivered, opened, clicked, replied, bounced, spam
+  emailType: varchar("email_type").notNull(), // application_sent, follow_up, interview_request, status_update
+  sendgridMessageId: varchar("sendgrid_message_id"),
+  recipientEmail: varchar("recipient_email"),
+  subject: text("subject"),
+  metadata: jsonb("metadata"), // Email content, tracking data, response details
+  timestamp: timestamp("timestamp").defaultNow(),
+  ipAddress: varchar("ip_address"),
+  userAgent: text("user_agent"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_email_events_application_id").on(table.applicationId),
+  index("idx_email_events_user_timestamp").on(table.userId, table.timestamp.desc()),
+  index("idx_email_events_type").on(table.eventType),
+  index("idx_email_events_sendgrid_id").on(table.sendgridMessageId),
+]);
+
+// Application documents for version control and document management
+export const applicationDocuments = pgTable("application_documents", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  applicationId: varchar("application_id").notNull().references(() => applications.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  documentType: varchar("document_type").notNull(), // cv, cover_letter, portfolio, transcript, certification
+  fileName: text("file_name").notNull(),
+  originalFileName: text("original_file_name"),
+  fileSize: integer("file_size"),
+  mimeType: varchar("mime_type"),
+  storageUrl: text("storage_url"), // URL to stored document
+  content: text("content"), // Document text content for searching
+  version: integer("version").default(1).notNull(),
+  isActive: boolean("is_active").default(true),
+  generatedBy: varchar("generated_by"), // ai, user, imported
+  generationMetadata: jsonb("generation_metadata"), // AI prompts, settings used
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_application_documents_application_id").on(table.applicationId),
+  index("idx_application_documents_user_id").on(table.userId),
+  index("idx_application_documents_type").on(table.documentType),
+  index("idx_application_documents_active").on(table.isActive),
+]);
+
+// Application notifications and reminders
+export const applicationNotifications = pgTable("application_notifications", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  applicationId: varchar("application_id").notNull().references(() => applications.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  notificationType: varchar("notification_type").notNull(), // follow_up_reminder, interview_reminder, status_change, deadline_warning
+  title: text("title").notNull(),
+  message: text("message").notNull(),
+  scheduledFor: timestamp("scheduled_for").notNull(),
+  sentAt: timestamp("sent_at"),
+  isRead: boolean("is_read").default(false),
+  isActive: boolean("is_active").default(true),
+  notificationMethod: text("notification_method").array().default(['in_app']), // in_app, email, push
+  metadata: jsonb("metadata"), // Additional context for the notification
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_application_notifications_application_id").on(table.applicationId),
+  index("idx_application_notifications_user_scheduled").on(table.userId, table.scheduledFor),
+  index("idx_application_notifications_type").on(table.notificationType),
+  index("idx_application_notifications_unread").on(table.isRead, table.isActive),
+]);
+
+// Employer interactions tracking
+export const employerInteractions = pgTable("employer_interactions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  applicationId: varchar("application_id").notNull().references(() => applications.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  interactionType: varchar("interaction_type").notNull(), // profile_view, application_download, email_open, response_received
+  interactionSource: varchar("interaction_source"), // email_tracker, linkedin, company_portal, direct
+  employerEmail: varchar("employer_email"),
+  employerName: varchar("employer_name"),
+  interactionData: jsonb("interaction_data"), // Additional details about the interaction
+  timestamp: timestamp("timestamp").defaultNow(),
+  ipAddress: varchar("ip_address"),
+  userAgent: text("user_agent"),
+  location: jsonb("location"), // Geographic data if available
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_employer_interactions_application_id").on(table.applicationId),
+  index("idx_employer_interactions_user_timestamp").on(table.userId, table.timestamp.desc()),
+  index("idx_employer_interactions_type").on(table.interactionType),
+  index("idx_employer_interactions_employer").on(table.employerEmail),
+]);
+
+// Application analytics and insights
+export const applicationAnalytics = pgTable("application_analytics", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  applicationId: varchar("application_id").references(() => applications.id, { onDelete: "cascade" }),
+  metric: varchar("metric").notNull(), // response_rate, time_to_response, success_rate, etc.
+  value: decimal("value").notNull(),
+  metadata: jsonb("metadata"), // Additional context for the metric
+  calculatedAt: timestamp("calculated_at").defaultNow(),
+  periodStart: timestamp("period_start"),
+  periodEnd: timestamp("period_end"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_application_analytics_user_metric").on(table.userId, table.metric),
+  index("idx_application_analytics_application_id").on(table.applicationId),
+  index("idx_application_analytics_calculated_at").on(table.calculatedAt.desc()),
+]);
 
 // API usage tracking table for detailed analytics
 export const apiUsage = pgTable("api_usage", {
@@ -280,6 +442,7 @@ export const userPreferences = pgTable("user_preferences", {
   industries: text("industries").array(),
   companySize: varchar("company_size"), // startup, small, medium, large, enterprise
   benefits: text("benefits").array(), // health_insurance, flexible_hours, etc.
+  preferences: jsonb("preferences"), // Notification and application preferences as JSON
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => [
@@ -307,6 +470,12 @@ export const jobAlerts = pgTable("job_alerts", {
 export const usersRelations = relations(users, ({ many, one }) => ({
   cvs: many(cvs),
   applications: many(applications),
+  applicationHistory: many(applicationHistory),
+  emailEvents: many(emailEvents),
+  applicationDocuments: many(applicationDocuments),
+  applicationNotifications: many(applicationNotifications),
+  employerInteractions: many(employerInteractions),
+  applicationAnalytics: many(applicationAnalytics),
   apiUsage: many(apiUsage),
   authAccounts: many(authAccounts),
   subscriptions: many(subscriptions),
@@ -350,7 +519,7 @@ export const jobsRelations = relations(jobs, ({ many }) => ({
   applications: many(applications),
 }));
 
-export const applicationsRelations = relations(applications, ({ one }) => ({
+export const applicationsRelations = relations(applications, ({ one, many }) => ({
   user: one(users, {
     fields: [applications.userId],
     references: [users.id],
@@ -359,6 +528,12 @@ export const applicationsRelations = relations(applications, ({ one }) => ({
     fields: [applications.jobId],
     references: [jobs.id],
   }),
+  history: many(applicationHistory),
+  emailEvents: many(emailEvents),
+  documents: many(applicationDocuments),
+  notifications: many(applicationNotifications),
+  employerInteractions: many(employerInteractions),
+  analytics: many(applicationAnalytics),
 }));
 
 export const apiUsageRelations = relations(apiUsage, ({ one }) => ({
@@ -412,6 +587,73 @@ export const jobAlertsRelations = relations(jobAlerts, ({ one }) => ({
   }),
 }));
 
+// New table relations
+export const applicationHistoryRelations = relations(applicationHistory, ({ one }) => ({
+  application: one(applications, {
+    fields: [applicationHistory.applicationId],
+    references: [applications.id],
+  }),
+  user: one(users, {
+    fields: [applicationHistory.userId],
+    references: [users.id],
+  }),
+}));
+
+export const emailEventsRelations = relations(emailEvents, ({ one }) => ({
+  application: one(applications, {
+    fields: [emailEvents.applicationId],
+    references: [applications.id],
+  }),
+  user: one(users, {
+    fields: [emailEvents.userId],
+    references: [users.id],
+  }),
+}));
+
+export const applicationDocumentsRelations = relations(applicationDocuments, ({ one }) => ({
+  application: one(applications, {
+    fields: [applicationDocuments.applicationId],
+    references: [applications.id],
+  }),
+  user: one(users, {
+    fields: [applicationDocuments.userId],
+    references: [users.id],
+  }),
+}));
+
+export const applicationNotificationsRelations = relations(applicationNotifications, ({ one }) => ({
+  application: one(applications, {
+    fields: [applicationNotifications.applicationId],
+    references: [applications.id],
+  }),
+  user: one(users, {
+    fields: [applicationNotifications.userId],
+    references: [users.id],
+  }),
+}));
+
+export const employerInteractionsRelations = relations(employerInteractions, ({ one }) => ({
+  application: one(applications, {
+    fields: [employerInteractions.applicationId],
+    references: [applications.id],
+  }),
+  user: one(users, {
+    fields: [employerInteractions.userId],
+    references: [users.id],
+  }),
+}));
+
+export const applicationAnalyticsRelations = relations(applicationAnalytics, ({ one }) => ({
+  application: one(applications, {
+    fields: [applicationAnalytics.applicationId],
+    references: [applications.id],
+  }),
+  user: one(users, {
+    fields: [applicationAnalytics.userId],
+    references: [users.id],
+  }),
+}));
+
 // Zod schemas for validation
 export const insertUserSchema = createInsertSchema(users);
 export const insertCvSchema = createInsertSchema(cvs).omit({ id: true, createdAt: true, updatedAt: true });
@@ -429,6 +671,12 @@ export const insertSearchHistorySchema = createInsertSchema(searchHistory).omit(
 export const insertJobBookmarkSchema = createInsertSchema(jobBookmarks).omit({ id: true, createdAt: true });
 export const insertUserPreferencesSchema = createInsertSchema(userPreferences).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertJobAlertSchema = createInsertSchema(jobAlerts).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertApplicationHistorySchema = createInsertSchema(applicationHistory).omit({ id: true, createdAt: true });
+export const insertEmailEventSchema = createInsertSchema(emailEvents).omit({ id: true, createdAt: true });
+export const insertApplicationDocumentSchema = createInsertSchema(applicationDocuments).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertApplicationNotificationSchema = createInsertSchema(applicationNotifications).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertEmployerInteractionSchema = createInsertSchema(employerInteractions).omit({ id: true, createdAt: true });
+export const insertApplicationAnalyticsSchema = createInsertSchema(applicationAnalytics).omit({ id: true, createdAt: true });
 
 // Additional auth-specific schemas
 export const registerSchema = z.object({
@@ -599,3 +847,17 @@ export type JobSearchFilters = z.infer<typeof jobSearchSchema>;
 export type SaveSearchData = z.infer<typeof saveSearchSchema>;
 export type BookmarkJobData = z.infer<typeof bookmarkJobSchema>;
 export type UpdatePreferencesData = z.infer<typeof updatePreferencesSchema>;
+
+// New comprehensive application tracking types
+export type InsertApplicationHistory = z.infer<typeof insertApplicationHistorySchema>;
+export type ApplicationHistory = typeof applicationHistory.$inferSelect;
+export type InsertEmailEvent = z.infer<typeof insertEmailEventSchema>;
+export type EmailEvent = typeof emailEvents.$inferSelect;
+export type InsertApplicationDocument = z.infer<typeof insertApplicationDocumentSchema>;
+export type ApplicationDocument = typeof applicationDocuments.$inferSelect;
+export type InsertApplicationNotification = z.infer<typeof insertApplicationNotificationSchema>;
+export type ApplicationNotification = typeof applicationNotifications.$inferSelect;
+export type InsertEmployerInteraction = z.infer<typeof insertEmployerInteractionSchema>;
+export type EmployerInteraction = typeof employerInteractions.$inferSelect;
+export type InsertApplicationAnalytics = z.infer<typeof insertApplicationAnalyticsSchema>;
+export type ApplicationAnalytics = typeof applicationAnalytics.$inferSelect;
