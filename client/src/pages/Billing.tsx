@@ -138,7 +138,6 @@ export default function Billing() {
               <>
                 <Button 
                   onClick={() => handleUpgrade('Premium')}
-                  disabled={isLoading}
                   data-testid="button-upgrade-premium"
                 >
                   Upgrade to Premium (₹499/month)
@@ -146,7 +145,6 @@ export default function Billing() {
                 <Button 
                   variant="outline"
                   onClick={() => handleUpgrade('Pro')}
-                  disabled={isLoading}
                   data-testid="button-upgrade-pro"
                 >
                   Upgrade to Pro (₹999/month)
@@ -157,7 +155,6 @@ export default function Billing() {
               <>
                 <Button 
                   onClick={() => handleUpgrade('Pro')}
-                  disabled={isLoading}
                   data-testid="button-upgrade-pro"
                 >
                   Upgrade to Pro (₹999/month)
