@@ -539,6 +539,83 @@ export default function Dashboard() {
                 </div>
               </CardHeader>
               <CardContent>
+                {/* PDF Output Display */}
+                {cvData && (
+                  <div className="mb-6 border rounded-lg p-4 bg-muted/50">
+                    <div className="flex items-center justify-between mb-3">
+                      <h4 className="text-sm font-medium text-foreground flex items-center gap-2">
+                        <FileText className="h-4 w-4" />
+                        Your CV Document
+                      </h4>
+                      <Badge variant="outline" className="text-xs">
+                        {cvData.fileName}
+                      </Badge>
+                    </div>
+                    <div className="bg-white dark:bg-gray-900 border rounded p-4 min-h-[300px] max-h-[400px] overflow-auto">
+                      {cvData.parsedData ? (
+                        <div className="space-y-4 text-sm">
+                          <div>
+                            <h5 className="font-semibold text-foreground mb-2">Personal Information</h5>
+                            <div className="text-muted-foreground space-y-1">
+                              {cvData.parsedData.name && <p><strong>Name:</strong> {cvData.parsedData.name}</p>}
+                              {cvData.parsedData.email && <p><strong>Email:</strong> {cvData.parsedData.email}</p>}
+                              {cvData.parsedData.phone && <p><strong>Phone:</strong> {cvData.parsedData.phone}</p>}
+                              {cvData.parsedData.location && <p><strong>Location:</strong> {cvData.parsedData.location}</p>}
+                            </div>
+                          </div>
+                          
+                          {cvData.skills && cvData.skills.length > 0 && (
+                            <div>
+                              <h5 className="font-semibold text-foreground mb-2">Skills</h5>
+                              <div className="flex flex-wrap gap-1">
+                                {cvData.skills.map((skill, index) => (
+                                  <Badge key={index} variant="secondary" className="text-xs">
+                                    {skill}
+                                  </Badge>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          
+                          {cvData.experience && (
+                            <div>
+                              <h5 className="font-semibold text-foreground mb-2">Experience</h5>
+                              <p className="text-muted-foreground text-sm">
+                                {cvData.experience}
+                              </p>
+                            </div>
+                          )}
+                          
+                          {cvData.education && (
+                            <div>
+                              <h5 className="font-semibold text-foreground mb-2">Education</h5>
+                              <p className="text-muted-foreground text-sm">
+                                {cvData.education}
+                              </p>
+                            </div>
+                          )}
+                          
+                          {cvData.parsedData.summary && (
+                            <div>
+                              <h5 className="font-semibold text-foreground mb-2">Summary</h5>
+                              <p className="text-muted-foreground text-sm">
+                                {cvData.parsedData.summary}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-center h-full text-muted-foreground">
+                          <div className="text-center">
+                            <FileText className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                            <p className="text-sm">CV content is being processed...</p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+                
                 {matchedJobsLoading ? (
                   <div className="flex items-center justify-center py-12">
                     <Loader2 className="h-8 w-8 animate-spin" />
