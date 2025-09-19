@@ -30,6 +30,7 @@ interface CVResponse {
   id: string
   userId: string
   fileName: string
+  originalContent: string
   parsedData: any
   skills: string[]
   experience: string
@@ -552,58 +553,10 @@ export default function Dashboard() {
                       </Badge>
                     </div>
                     <div className="bg-white dark:bg-gray-900 border rounded p-4 min-h-[300px] max-h-[400px] overflow-auto">
-                      {cvData.parsedData ? (
-                        <div className="space-y-4 text-sm">
-                          <div>
-                            <h5 className="font-semibold text-foreground mb-2">Personal Information</h5>
-                            <div className="text-muted-foreground space-y-1">
-                              {cvData.parsedData.name && <p><strong>Name:</strong> {cvData.parsedData.name}</p>}
-                              {cvData.parsedData.email && <p><strong>Email:</strong> {cvData.parsedData.email}</p>}
-                              {cvData.parsedData.phone && <p><strong>Phone:</strong> {cvData.parsedData.phone}</p>}
-                              {cvData.parsedData.location && <p><strong>Location:</strong> {cvData.parsedData.location}</p>}
-                            </div>
-                          </div>
-                          
-                          {cvData.skills && cvData.skills.length > 0 && (
-                            <div>
-                              <h5 className="font-semibold text-foreground mb-2">Skills</h5>
-                              <div className="flex flex-wrap gap-1">
-                                {cvData.skills.map((skill, index) => (
-                                  <Badge key={index} variant="secondary" className="text-xs">
-                                    {skill}
-                                  </Badge>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                          
-                          {cvData.experience && (
-                            <div>
-                              <h5 className="font-semibold text-foreground mb-2">Experience</h5>
-                              <p className="text-muted-foreground text-sm">
-                                {cvData.experience}
-                              </p>
-                            </div>
-                          )}
-                          
-                          {cvData.education && (
-                            <div>
-                              <h5 className="font-semibold text-foreground mb-2">Education</h5>
-                              <p className="text-muted-foreground text-sm">
-                                {cvData.education}
-                              </p>
-                            </div>
-                          )}
-                          
-                          {cvData.parsedData.summary && (
-                            <div>
-                              <h5 className="font-semibold text-foreground mb-2">Summary</h5>
-                              <p className="text-muted-foreground text-sm">
-                                {cvData.parsedData.summary}
-                              </p>
-                            </div>
-                          )}
-                        </div>
+                      {cvData.originalContent ? (
+                        <pre className="text-sm text-foreground whitespace-pre-wrap font-mono leading-relaxed">
+                          {cvData.originalContent}
+                        </pre>
                       ) : (
                         <div className="flex items-center justify-center h-full text-muted-foreground">
                           <div className="text-center">
