@@ -4,7 +4,6 @@ import helmet from "helmet";
 import { randomUUID } from "crypto";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
-import { StripeWebhookService } from "./stripe";
 import { PhonePeService } from "./phonepe";
 
 const app = express();
@@ -17,8 +16,6 @@ const requiredProdVars = [
   'DATABASE_URL',
   'OPENAI_API_KEY',
   'SENDGRID_API_KEY', 
-  'STRIPE_SECRET_KEY',
-  'STRIPE_WEBHOOK_SECRET',
   'JWT_SECRET',
   'SESSION_SECRET',
   'APP_BASE_URL'
@@ -44,9 +41,7 @@ const cspConfig = isProduction ? {
   directives: {
     defaultSrc: ["'self'"],
     scriptSrc: [
-      "'self'",
-      "https://js.stripe.com",
-      "https://checkout.stripe.com"
+      "'self'"
       // NOTE: unsafe-inline and unsafe-eval removed for production security
     ],
     styleSrc: ["'self'", "https://fonts.googleapis.com"],
@@ -56,11 +51,10 @@ const cspConfig = isProduction ? {
       "'self'",
       "https://api.openai.com",
       "https://api.sendgrid.com", 
-      "https://api.stripe.com",
       "https://jobr.co.in",
       "wss://jobr.co.in" // WebSocket support for production domain
     ],
-    frameSrc: ["https://js.stripe.com", "https://hooks.stripe.com"],
+    frameSrc: ["'none'"],
     objectSrc: ["'none'"],
     upgradeInsecureRequests: []
   }
@@ -68,12 +62,12 @@ const cspConfig = isProduction ? {
   // DEVELOPMENT CSP - More permissive for development
   directives: {
     defaultSrc: ["'self'"],
-    scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://js.stripe.com"],
+    scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
     styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
     fontSrc: ["'self'", "https://fonts.gstatic.com"],
     imgSrc: ["'self'", "data:", "https:"],
-    connectSrc: ["'self'", "https://api.openai.com", "https://api.stripe.com", "https://api.sendgrid.com"],
-    frameSrc: ["'self'", "https://js.stripe.com"],
+    connectSrc: ["'self'", "https://api.openai.com", "https://api.sendgrid.com"],
+    frameSrc: ["'self'"],
     objectSrc: ["'none'"],
     upgradeInsecureRequests: []
   }
@@ -88,7 +82,7 @@ app.use(helmet({
   },
   noSniff: true,
   frameguard: { action: 'deny' },
-  crossOriginEmbedderPolicy: false // Allow Stripe frames
+  crossOriginEmbedderPolicy: false
 }));
 
 // SECURITY: Add request ID correlation for structured logging
@@ -98,11 +92,6 @@ app.use((req: any, res, next) => {
   next();
 });
 
-// CRITICAL: Register Stripe webhook BEFORE body parsers
-// Stripe webhooks need raw body data for signature verification
-app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), (req, res) => {
-  StripeWebhookService.handleWebhook(req, res);
-});
 
 // PhonePe webhook endpoint
 app.post('/api/phonepe/webhook', express.json(), (req, res) => {
