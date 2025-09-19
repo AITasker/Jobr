@@ -126,8 +126,14 @@ export async function setupAuth(app: Express) {
     })(req, res, next);
   });
 
-  app.get("/api/logout", (req, res) => {
+  app.get("/api/logout", async (req, res) => {
+    // Import JWT utilities to clear JWT cookies
+    const { JwtUtils } = await import('./jwtUtils');
+    
     req.logout(() => {
+      // Clear JWT cookie as well as session
+      JwtUtils.clearTokenCookie(res);
+      
       // For faster logout, redirect immediately to homepage
       // The OIDC provider session will naturally expire
       res.redirect("/");
