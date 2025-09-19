@@ -7,8 +7,6 @@ import {
   templates,
   authAccounts,
   otpCodes,
-  subscriptions,
-  stripeEvents,
   paymentRequests,
   savedSearches,
   searchHistory,
@@ -37,10 +35,6 @@ import {
   type InsertAuthAccount,
   type OtpCode,
   type InsertOtpCode,
-  type Subscription,
-  type InsertSubscription,
-  type StripeEvent,
-  type InsertStripeEvent,
   type PaymentRequest,
   type InsertPaymentRequest,
   type SavedSearch,
@@ -119,22 +113,10 @@ export interface IStorage {
   updateOtpCode(id: string, updates: Partial<OtpCode>): Promise<OtpCode>;
   cleanupExpiredOtpCodes(): Promise<void>;
 
-  // Subscription operations
-  createSubscription(subscription: InsertSubscription): Promise<Subscription>;
-  getSubscriptionsByUserId(userId: string): Promise<Subscription[]>;
-  getActiveSubscriptionByUserId(userId: string): Promise<Subscription | undefined>;
-  updateSubscription(id: string, updates: Partial<Subscription>): Promise<Subscription>;
-  updateUserStripeInfo(userId: string, customerId?: string, subscriptionId?: string): Promise<User>;
+  // User operations
   incrementUserApplicationCount(userId: string): Promise<User>;
   resetMonthlyApplicationCount(userId: string): Promise<User>;
-  getUserByStripeCustomerId(customerId: string): Promise<User | undefined>;
   updateUserPlan(userId: string, plan: string, subscriptionStatus?: string, periodEnd?: Date): Promise<User>;
-
-  // Stripe Event operations for webhook idempotency
-  createStripeEvent(event: InsertStripeEvent): Promise<StripeEvent>;
-  getStripeEventByEventId(eventId: string): Promise<StripeEvent | undefined>;
-  markStripeEventProcessed(eventId: string, errorMessage?: string): Promise<StripeEvent>;
-  cleanupOldStripeEvents(olderThanDays: number): Promise<void>;
 
   // Payment Request operations for payment idempotency (Priority 1)
   getPaymentRequestByKey(idempotencyKey: string): Promise<PaymentRequest | undefined>;
@@ -482,63 +464,6 @@ export class DatabaseStorage implements IStorage {
       .where(eq(otpCodes.expiresAt, new Date()));
   }
 
-  // Subscription operations
-  async createSubscription(subscriptionData: InsertSubscription): Promise<Subscription> {
-    const [subscription] = await db.insert(subscriptions).values(subscriptionData).returning();
-    return subscription;
-  }
-
-  async getSubscriptionsByUserId(userId: string): Promise<Subscription[]> {
-    return await db
-      .select()
-      .from(subscriptions)
-      .where(eq(subscriptions.userId, userId))
-      .orderBy(desc(subscriptions.createdAt));
-  }
-
-  async getActiveSubscriptionByUserId(userId: string): Promise<Subscription | undefined> {
-    const [subscription] = await db
-      .select()
-      .from(subscriptions)
-      .where(
-        and(
-          eq(subscriptions.userId, userId),
-          eq(subscriptions.status, "active")
-        )
-      )
-      .orderBy(desc(subscriptions.createdAt));
-    return subscription;
-  }
-
-  async updateSubscription(id: string, updates: Partial<Subscription>): Promise<Subscription> {
-    const [subscription] = await db
-      .update(subscriptions)
-      .set({ ...updates, updatedAt: new Date() })
-      .where(eq(subscriptions.id, id))
-      .returning();
-    return subscription;
-  }
-
-  async updateUserStripeInfo(userId: string, customerId?: string, subscriptionId?: string): Promise<User> {
-    const updates: Partial<User> = {
-      updatedAt: new Date()
-    };
-    
-    if (customerId) {
-      updates.stripeCustomerId = customerId;
-    }
-    
-    if (subscriptionId) {
-      updates.stripeSubscriptionId = subscriptionId;
-    }
-
-    const [user] = await db
-      .update(users)
-      .set(updates)
-      .where(eq(users.id, userId))
-      .returning();
-    return user;
-  }
 
   async incrementUserApplicationCount(userId: string): Promise<User> {
     const [user] = await db
@@ -565,10 +490,6 @@ export class DatabaseStorage implements IStorage {
     return user;
   }
 
-  async getUserByStripeCustomerId(customerId: string): Promise<User | undefined> {
-    const [user] = await db.select().from(users).where(eq(users.stripeCustomerId, customerId));
-    return user;
-  }
 
   async updateUserPlan(userId: string, plan: string, subscriptionStatus?: string, periodEnd?: Date): Promise<User> {
     const updates: Partial<User> = {
@@ -592,51 +513,6 @@ export class DatabaseStorage implements IStorage {
     return user;
   }
 
-  // Stripe Event operations for webhook idempotency
-  async createStripeEvent(eventData: InsertStripeEvent): Promise<StripeEvent> {
-    const [event] = await db.insert(stripeEvents).values(eventData).returning();
-    return event;
-  }
-
-  async getStripeEventByEventId(eventId: string): Promise<StripeEvent | undefined> {
-    const [event] = await db.select().from(stripeEvents).where(eq(stripeEvents.eventId, eventId));
-    return event;
-  }
-
-  async markStripeEventProcessed(eventId: string, errorMessage?: string): Promise<StripeEvent> {
-    const updates: Partial<StripeEvent> = {
-      processed: true,
-      processedAt: new Date()
-    };
-    
-    if (errorMessage) {
-      updates.errorMessage = errorMessage;
-    }
-
-    const [event] = await db
-      .update(stripeEvents)
-      .set(errorMessage ? {
-        ...updates,
-        retryCount: sql`${stripeEvents.retryCount} + 1`
-      } : updates)
-      .where(eq(stripeEvents.eventId, eventId))
-      .returning();
-    return event;
-  }
-
-  async cleanupOldStripeEvents(olderThanDays: number = 30): Promise<void> {
-    const cutoffDate = new Date();
-    cutoffDate.setDate(cutoffDate.getDate() - olderThanDays);
-    
-    await db
-      .delete(stripeEvents)
-      .where(
-        and(
-          eq(stripeEvents.processed, true),
-          sql`${stripeEvents.createdAt} < ${cutoffDate}`
-        )
-      );
-  }
 
   // Payment Request operations for payment idempotency (Priority 1)
   async getPaymentRequestByKey(idempotencyKey: string): Promise<PaymentRequest | undefined> {
