@@ -30,7 +30,6 @@ interface CVResponse {
   id: string
   userId: string
   fileName: string
-  originalContent: string
   parsedData: any
   skills: string[]
   experience: string
@@ -147,7 +146,7 @@ export default function Dashboard() {
   // All queries must be called before any conditional logic
   const { data: cvData, isLoading: cvLoading, error: cvError } = useQuery<CVResponse | null>({
     queryKey: ['/api/cv'],
-    enabled: Boolean(isAuthenticated),
+    enabled: isAuthenticated,
     retry: false
   })
 
@@ -167,7 +166,7 @@ export default function Dashboard() {
   // Get all applications
   const { data: applications, isLoading: applicationsLoading } = useQuery<ApplicationWithJob[]>({
     queryKey: ['/api/applications'],
-    enabled: Boolean(isAuthenticated),
+    enabled: isAuthenticated,
     retry: false
   })
 
@@ -193,7 +192,7 @@ export default function Dashboard() {
   // Job insights query for market analysis
   const { data: jobInsights, isLoading: insightsLoading } = useQuery<{insights: JobInsights}>({
     queryKey: ['/api/jobs/insights'],
-    enabled: Boolean(isAuthenticated && hasCvData && activeTab === 'jobs'),
+    enabled: isAuthenticated && hasCvData && activeTab === 'jobs',
     retry: false,
     staleTime: 30 * 60 * 1000 // Cache for 30 minutes
   })
@@ -541,7 +540,7 @@ export default function Dashboard() {
               </CardHeader>
               <CardContent>
                 {/* PDF Output Display */}
-                {cvData && (
+                {cvData && cvData.originalContent && (
                   <div className="mb-6 border rounded-lg p-4 bg-muted/50">
                     <div className="flex items-center justify-between mb-3">
                       <h4 className="text-sm font-medium text-foreground flex items-center gap-2">
@@ -553,18 +552,9 @@ export default function Dashboard() {
                       </Badge>
                     </div>
                     <div className="bg-white dark:bg-gray-900 border rounded p-4 min-h-[300px] max-h-[400px] overflow-auto">
-                      {cvData.originalContent ? (
-                        <pre className="text-sm text-foreground whitespace-pre-wrap font-mono leading-relaxed">
-                          {cvData.originalContent}
-                        </pre>
-                      ) : (
-                        <div className="flex items-center justify-center h-full text-muted-foreground">
-                          <div className="text-center">
-                            <FileText className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                            <p className="text-sm">CV content is being processed...</p>
-                          </div>
-                        </div>
-                      )}
+                      <pre className="text-sm text-foreground whitespace-pre-wrap font-mono leading-relaxed">
+                        {cvData.originalContent}
+                      </pre>
                     </div>
                   </div>
                 )}

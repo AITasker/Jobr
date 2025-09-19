@@ -113,7 +113,7 @@ export default defineConfig({
     env: {
       NODE_ENV: 'test',
       // Test environment variables
-      DATABASE_URL: process.env.TEST_DATABASE_URL || process.env.DATABASE_URL || 'postgres://localhost:5432/test',
+      DATABASE_URL: process.env.TEST_DATABASE_URL || process.env.DATABASE_URL,
       JWT_SECRET: process.env.JWT_SECRET || 'test-jwt-secret-very-long-for-security',
       // Mock service configurations for testing
       OPENAI_API_KEY: 'test-openai-key',
@@ -121,7 +121,7 @@ export default defineConfig({
       STRIPE_SECRET_KEY: 'sk_test_fake',
       STRIPE_WEBHOOK_SECRET: 'whsec_test_fake',
       PHONEPE_MERCHANT_ID: 'PGTESTPAYUAT86',
-      PHONEPE_SALT_KEY: process.env.PHONEPE_SALT_KEY || 'test-phonepe-salt-key-placeholder',
+      PHONEPE_SALT_KEY: '96434309-7796-489d-8924-ab56988a6076',
     }
   },
 
@@ -138,7 +138,8 @@ export default defineConfig({
   expect: {
     timeout: 15000,
     toHaveScreenshot: { 
-      threshold: 0.2
+      threshold: 0.2,
+      mode: 'pixel'
     }
   },
 
