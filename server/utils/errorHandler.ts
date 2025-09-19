@@ -63,7 +63,22 @@ export const ERROR_CODES = {
   // Authentication errors
   LOGIN_FAILED: 'LOGIN_FAILED',
   REGISTRATION_FAILED: 'REGISTRATION_FAILED',
-  EMAIL_REQUIRED: 'EMAIL_REQUIRED'
+  EMAIL_REQUIRED: 'EMAIL_REQUIRED',
+  INVALID_CREDENTIALS: 'INVALID_CREDENTIALS',
+  ACCOUNT_LOCKED: 'ACCOUNT_LOCKED',
+  TOKEN_EXPIRED: 'TOKEN_EXPIRED',
+  TOKEN_INVALID: 'TOKEN_INVALID',
+  PHONE_VERIFICATION_FAILED: 'PHONE_VERIFICATION_FAILED',
+  OTP_EXPIRED: 'OTP_EXPIRED',
+  OTP_INVALID: 'OTP_INVALID',
+  TOO_MANY_ATTEMPTS: 'TOO_MANY_ATTEMPTS',
+  SESSION_EXPIRED: 'SESSION_EXPIRED',
+  
+  // Integration errors
+  INTEGRATION_UNAVAILABLE: 'INTEGRATION_UNAVAILABLE',
+  GOOGLE_OAUTH_UNAVAILABLE: 'GOOGLE_OAUTH_UNAVAILABLE',
+  STRIPE_NOT_CONFIGURED: 'STRIPE_NOT_CONFIGURED',
+  SENDGRID_NOT_CONFIGURED: 'SENDGRID_NOT_CONFIGURED'
 } as const;
 
 export type ErrorCode = typeof ERROR_CODES[keyof typeof ERROR_CODES];
@@ -79,3 +94,78 @@ export const sanitizeError = (error: any, isProduction: boolean = process.env.NO
   }
   return error;
 };
+
+// Authentication-specific error responses
+export const AUTH_ERRORS = {
+  INVALID_CREDENTIALS: createErrorResponse(
+    "Invalid email or password",
+    ERROR_CODES.INVALID_CREDENTIALS
+  ),
+  ACCOUNT_LOCKED: createErrorResponse(
+    "Account temporarily locked due to too many failed login attempts. Please try again later.",
+    ERROR_CODES.ACCOUNT_LOCKED
+  ),
+  TOKEN_EXPIRED: createErrorResponse(
+    "Your session has expired. Please log in again.",
+    ERROR_CODES.TOKEN_EXPIRED
+  ),
+  SESSION_EXPIRED: createErrorResponse(
+    "Your session has expired. Please log in again.",
+    ERROR_CODES.SESSION_EXPIRED
+  ),
+  TOO_MANY_ATTEMPTS: createErrorResponse(
+    "Too many authentication attempts. Please try again later.",
+    ERROR_CODES.TOO_MANY_ATTEMPTS
+  )
+};
+
+// Enhanced logging for authentication events
+export interface AuthLogData {
+  userId?: string;
+  email?: string;
+  method: 'email' | 'google' | 'phone' | 'replit';
+  action: 'login' | 'register' | 'logout' | 'refresh' | 'failed_attempt';
+  ip?: string;
+  userAgent?: string;
+  success: boolean;
+  errorCode?: string;
+  metadata?: any;
+}
+
+export class AuthLogger {
+  /**
+   * Log authentication events with structured data
+   */
+  static logAuthEvent(data: AuthLogData): void {
+    const logEntry = {
+      timestamp: new Date().toISOString(),
+      level: data.success ? 'info' : 'warn',
+      category: 'authentication',
+      ...data
+    };
+
+    if (data.success) {
+      console.log('[AUTH_SUCCESS]', JSON.stringify(logEntry));
+    } else {
+      console.warn('[AUTH_FAILURE]', JSON.stringify(logEntry));
+    }
+
+    // In production, this could be sent to external logging service
+    // e.g., DataDog, Splunk, CloudWatch, etc.
+  }
+
+  /**
+   * Log security events that require attention
+   */
+  static logSecurityEvent(event: string, data: any): void {
+    const logEntry = {
+      timestamp: new Date().toISOString(),
+      level: 'error',
+      category: 'security',
+      event,
+      ...data
+    };
+
+    console.error('[SECURITY_EVENT]', JSON.stringify(logEntry));
+  }
+}

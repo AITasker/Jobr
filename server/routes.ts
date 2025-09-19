@@ -16,11 +16,34 @@ import { JwtUtils } from "./jwtUtils";
 import { SubscriptionService } from "./subscriptionService";
 import { registerSchema, loginSchema, insertJobSchema, insertApplicationSchema, createSubscriptionSchema, updateSubscriptionSchema, phoneRequestSchema, phoneVerifySchema, jobApplySchema, cvTailorSchema, applicationUpdateSchema, batchPrepareSchema, subscriptionCancelSchema, VALID_PRICE_MAPPINGS } from "@shared/schema";
 import { createErrorResponse, ERROR_CODES } from "./utils/errorHandler";
+import { addAuthMetricsRoute } from "./authMetricsRoute";
 
 // Configure rate limiting for authentication routes
+const loginRateLimit = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 20, // Limit each IP to 20 login attempts per 15 minutes
+  message: {
+    message: "Too many login attempts. Please try again in 15 minutes.",
+    code: "RATE_LIMIT_EXCEEDED"
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const registerRateLimit = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10, // Limit each IP to 10 registration attempts per 15 minutes
+  message: {
+    message: "Too many registration attempts. Please try again in 15 minutes.",
+    code: "RATE_LIMIT_EXCEEDED"
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 const authRateLimit = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // Limit each IP to 5 requests per windowMs for auth routes
+  max: 10, // Limit each IP to 10 requests per windowMs for other auth routes
   message: {
     message: "Too many authentication attempts. Please try again in 15 minutes.",
     code: "RATE_LIMIT_EXCEEDED"
@@ -102,7 +125,67 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Auth middleware
   await setupAuth(app);
 
-  // Apply general rate limiting to all routes
+  // Integration status endpoint - exempt from rate limiting for health checks
+  app.get('/api/integrations/status', (req, res) => {
+    try {
+      const integrations = {
+        openai: {
+          available: !!process.env.OPENAI_API_KEY,
+          features: ['cv_parsing', 'job_matching', 'ai_assistance'],
+          fallback: process.env.OPENAI_API_KEY ? null : 'basic_parsing'
+        },
+        google_oauth: {
+          available: googleEnabled,
+          features: ['social_login'],
+          fallback: 'email_password_login'
+        },
+        stripe: {
+          available: !!process.env.STRIPE_SECRET_KEY,
+          features: ['subscription_payments', 'billing_management'],
+          fallback: 'phonepe_payments'
+        },
+        phonepe: {
+          available: !!(process.env.PHONEPE_MERCHANT_ID && process.env.PHONEPE_SALT_KEY),
+          features: ['indian_payments', 'subscription_management'],
+          fallback: process.env.PHONEPE_MERCHANT_ID && process.env.PHONEPE_SALT_KEY ? null : 'test_mode',
+          test_mode: !(process.env.PHONEPE_MERCHANT_ID && process.env.PHONEPE_SALT_KEY)
+        },
+        sendgrid: {
+          available: !!process.env.SENDGRID_API_KEY,
+          features: ['email_notifications', 'password_reset', 'email_verification'],
+          fallback: 'console_logging'
+        }
+      };
+
+      const summary = {
+        total_integrations: Object.keys(integrations).length,
+        available: Object.values(integrations).filter(i => i.available).length,
+        missing: Object.values(integrations).filter(i => !i.available).length,
+        core_functional: integrations.openai.available, // Core AI functionality status
+        payments_functional: integrations.stripe.available || integrations.phonepe.available
+      };
+
+      res.json({
+        success: true,
+        summary,
+        integrations,
+        recommendations: [
+          !integrations.openai.available && "Configure OPENAI_API_KEY for full AI functionality",
+          !integrations.google_oauth.available && "Configure Google OAuth for social login",
+          !integrations.stripe.available && !integrations.phonepe.available && "Configure payment provider for subscriptions",
+          !integrations.sendgrid.available && "Configure SendGrid for email services"
+        ].filter(Boolean)
+      });
+    } catch (error) {
+      console.error("Integration status error:", error);
+      res.status(500).json({
+        message: "Failed to fetch integration status",
+        code: "INTEGRATION_STATUS_ERROR"
+      });
+    }
+  });
+
+  // Apply general rate limiting to all routes (after exempt routes)
   app.use(generalRateLimit);
 
   // Auth routes
@@ -118,7 +201,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // New JWT-based authentication routes
-  app.post('/api/auth/register', authRateLimit, async (req: any, res) => {
+  app.post('/api/auth/register', registerRateLimit, async (req: any, res) => {
     try {
       // Validate input
       const validationResult = registerSchema.safeParse(req.body);
@@ -165,7 +248,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/auth/login', authRateLimit, async (req: any, res) => {
+  app.post('/api/auth/login', loginRateLimit, async (req: any, res) => {
     try {
       // Validate input
       const validationResult = loginSchema.safeParse(req.body);
@@ -252,65 +335,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Integration status endpoint for frontend to check available services
-  app.get('/api/integrations/status', (req, res) => {
-    try {
-      const integrations = {
-        openai: {
-          available: !!process.env.OPENAI_API_KEY,
-          features: ['cv_parsing', 'job_matching', 'ai_assistance'],
-          fallback: process.env.OPENAI_API_KEY ? null : 'basic_parsing'
-        },
-        google_oauth: {
-          available: googleEnabled,
-          features: ['social_login'],
-          fallback: 'email_password_login'
-        },
-        stripe: {
-          available: !!process.env.STRIPE_SECRET_KEY,
-          features: ['subscription_payments', 'billing_management'],
-          fallback: 'phonepe_payments'
-        },
-        phonepe: {
-          available: !!(process.env.PHONEPE_MERCHANT_ID && process.env.PHONEPE_SALT_KEY),
-          features: ['indian_payments', 'subscription_management'],
-          fallback: process.env.PHONEPE_MERCHANT_ID && process.env.PHONEPE_SALT_KEY ? null : 'test_mode',
-          test_mode: !(process.env.PHONEPE_MERCHANT_ID && process.env.PHONEPE_SALT_KEY)
-        },
-        sendgrid: {
-          available: !!process.env.SENDGRID_API_KEY,
-          features: ['email_notifications', 'password_reset', 'email_verification'],
-          fallback: 'console_logging'
-        }
-      };
-
-      const summary = {
-        total_integrations: Object.keys(integrations).length,
-        available: Object.values(integrations).filter(i => i.available).length,
-        missing: Object.values(integrations).filter(i => !i.available).length,
-        core_functional: integrations.openai.available, // Core AI functionality status
-        payments_functional: integrations.stripe.available || integrations.phonepe.available
-      };
-
-      res.json({
-        success: true,
-        summary,
-        integrations,
-        recommendations: [
-          !integrations.openai.available && "Configure OPENAI_API_KEY for full AI functionality",
-          !integrations.google_oauth.available && "Configure Google OAuth for social login",
-          !integrations.stripe.available && !integrations.phonepe.available && "Configure payment provider for subscriptions",
-          !integrations.sendgrid.available && "Configure SendGrid for email services"
-        ].filter(Boolean)
-      });
-    } catch (error) {
-      console.error("Integration status error:", error);
-      res.status(500).json({
-        message: "Failed to fetch integration status",
-        code: "INTEGRATION_STATUS_ERROR"
-      });
-    }
-  });
+  // Integration status endpoint moved above to exempt from rate limiting
+  
+  // Register auth metrics routes (admin-protected)
+  addAuthMetricsRoute(app);
 
   // Google OAuth routes - only register if strategy is properly initialized
   if (googleEnabled) {

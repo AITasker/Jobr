@@ -1,6 +1,8 @@
 import bcrypt from 'bcryptjs';
 import { JwtUtils } from './jwtUtils';
 import { storage } from './storage';
+import { AuthMonitor } from './authMonitor';
+import { AUTH_ERRORS, ERROR_CODES, AuthLogger } from './utils/errorHandler';
 import type { RegisterData, LoginData, User, AuthAccount, InsertOtpCode, OtpCode } from '@shared/schema';
 
 // Authentication result types
@@ -39,11 +41,21 @@ export class AuthService {
   /**
    * Register a new user with email/password
    */
-  static async register(data: RegisterData): Promise<RegistrationResult> {
+  static async register(data: RegisterData, ip?: string, userAgent?: string): Promise<RegistrationResult> {
     try {
       // Check if user already exists
       const existingAccount = await storage.getAuthAccountByEmail(data.email, 'email');
       if (existingAccount) {
+        AuthLogger.logAuthEvent({
+          email: data.email,
+          method: 'email',
+          action: 'register',
+          ip,
+          userAgent,
+          success: false,
+          errorCode: ERROR_CODES.EMAIL_EXISTS
+        });
+        
         return {
           success: false,
           error: 'An account with this email already exists',
@@ -79,6 +91,17 @@ export class AuthService {
         email: user.email!
       });
 
+      // Log successful registration
+      AuthLogger.logAuthEvent({
+        userId: user.id,
+        email: user.email!,
+        method: 'email',
+        action: 'register',
+        ip,
+        userAgent,
+        success: true
+      });
+
       return {
         success: true,
         user,
@@ -87,6 +110,17 @@ export class AuthService {
       };
     } catch (error) {
       console.error('Registration error:', error);
+      AuthLogger.logAuthEvent({
+        email: data.email,
+        method: 'email',
+        action: 'register',
+        ip,
+        userAgent,
+        success: false,
+        errorCode: ERROR_CODES.REGISTRATION_FAILED,
+        metadata: { error: error instanceof Error ? error.message : 'Unknown error' }
+      });
+      
       return {
         success: false,
         error: 'Registration failed. Please try again.',
@@ -96,36 +130,62 @@ export class AuthService {
   }
 
   /**
-   * Login user with email/password
+   * Login user with email/password with enhanced security
    */
-  static async login(data: LoginData): Promise<AuthResult> {
+  static async login(data: LoginData, ip?: string, userAgent?: string): Promise<AuthResult> {
     try {
+      // Check for account lockout first
+      if (AuthMonitor.isAccountLocked(data.email)) {
+        const lockoutInfo = AuthMonitor.getLockoutInfo(data.email);
+        AuthLogger.logAuthEvent({
+          email: data.email,
+          method: 'email',
+          action: 'failed_attempt',
+          ip,
+          userAgent,
+          success: false,
+          errorCode: ERROR_CODES.ACCOUNT_LOCKED,
+          metadata: { reason: 'account_locked', lockedUntil: lockoutInfo.lockedUntil }
+        });
+        
+        return {
+          success: false,
+          error: 'Account temporarily locked due to too many failed login attempts. Please try again later.',
+          code: 'ACCOUNT_LOCKED'
+        };
+      }
+
       // Get auth account by email
       const authAccount = await storage.getAuthAccountByEmail(data.email, 'email');
       if (!authAccount || !authAccount.passwordHash) {
+        // Record failed attempt for invalid email
+        AuthMonitor.recordFailedAttempt(data.email, ip, userAgent);
         return {
           success: false,
           error: 'Invalid email or password',
           code: 'INVALID_CREDENTIALS'
         };
       }
-
-      // TODO: Check for lockout (implement rate limiting in storage)
       
       // Verify password
       const isValidPassword = await this.verifyPassword(data.password, authAccount.passwordHash);
       if (!isValidPassword) {
-        // TODO: Increment failed login attempts
+        // Record failed attempt for invalid password
+        const isLocked = AuthMonitor.recordFailedAttempt(data.email, ip, userAgent);
+        
         return {
           success: false,
-          error: 'Invalid email or password',
-          code: 'INVALID_CREDENTIALS'
+          error: isLocked ? 
+            'Account temporarily locked due to too many failed login attempts. Please try again later.' :
+            'Invalid email or password',
+          code: isLocked ? 'ACCOUNT_LOCKED' : 'INVALID_CREDENTIALS'
         };
       }
 
       // Get user details
       const user = await storage.getUser(authAccount.userId);
       if (!user) {
+        AuthMonitor.recordFailedAttempt(data.email, ip, userAgent);
         return {
           success: false,
           error: 'User not found',
@@ -139,7 +199,8 @@ export class AuthService {
         email: user.email!
       });
 
-      // TODO: Clear failed login attempts
+      // Log successful authentication and clear failed attempts
+      AuthMonitor.logSuccessfulAuth(user.id, user.email!, 'email', ip, userAgent);
 
       return {
         success: true,
@@ -148,6 +209,17 @@ export class AuthService {
       };
     } catch (error) {
       console.error('Login error:', error);
+      AuthLogger.logAuthEvent({
+        email: data.email,
+        method: 'email',
+        action: 'failed_attempt',
+        ip,
+        userAgent,
+        success: false,
+        errorCode: ERROR_CODES.LOGIN_FAILED,
+        metadata: { error: error instanceof Error ? error.message : 'Unknown error' }
+      });
+      
       return {
         success: false,
         error: 'Login failed. Please try again.',
@@ -184,7 +256,18 @@ export class AuthService {
         return null;
       }
 
-      // TODO: Add additional validation (account suspended, etc.)
+      // Additional validation - check if account should be suspended
+      if (user.email && AuthMonitor.isAccountLocked(user.email)) {
+        AuthLogger.logAuthEvent({
+          userId: user.id,
+          email: user.email,
+          method: 'email',
+          action: 'refresh',
+          success: false,
+          errorCode: ERROR_CODES.ACCOUNT_LOCKED
+        });
+        return null;
+      }
       
       return user;
     } catch (error) {
@@ -240,7 +323,7 @@ export class AuthService {
   /**
    * Handle Google OAuth authentication
    */
-  static async handleGoogleAuth(profile: any, accessToken: string): Promise<AuthResult> {
+  static async handleGoogleAuth(profile: any, accessToken: string, ip?: string, userAgent?: string): Promise<AuthResult> {
     try {
       const email = profile.emails?.[0]?.value;
       const firstName = profile.name?.givenName || profile.displayName;
@@ -312,6 +395,17 @@ export class AuthService {
         email: user.email!
       });
 
+      // Log successful Google authentication
+      AuthLogger.logAuthEvent({
+        userId: user.id,
+        email: user.email!,
+        method: 'google',
+        action: authAccount ? 'login' : 'register',
+        ip,
+        userAgent,
+        success: true
+      });
+
       return {
         success: true,
         user,
@@ -319,6 +413,18 @@ export class AuthService {
       };
     } catch (error) {
       console.error('Google auth error:', error);
+      const email = profile?.emails?.[0]?.value;
+      AuthLogger.logAuthEvent({
+        email: email || 'unknown',
+        method: 'google',
+        action: 'login',
+        ip,
+        userAgent,
+        success: false,
+        errorCode: 'GOOGLE_AUTH_FAILED',
+        metadata: { error: error instanceof Error ? error.message : 'Unknown error' }
+      });
+      
       return {
         success: false,
         error: 'Google authentication failed',

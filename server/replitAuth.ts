@@ -138,6 +138,7 @@ export const isAuthenticated: RequestHandler = async (req: any, res, next) => {
   // Import JWT utilities dynamically to avoid circular dependencies
   const { JwtUtils } = await import('./jwtUtils');
   const { storage } = await import('./storage');
+  const { AuthLogger } = await import('./utils/errorHandler');
 
   // First, try JWT authentication from cookies
   const jwtPayload = JwtUtils.getPayloadFromRequest(req);
@@ -146,6 +147,12 @@ export const isAuthenticated: RequestHandler = async (req: any, res, next) => {
       // Get user data for JWT authentication
       const user = await storage.getUser(jwtPayload.userId);
       if (user) {
+        // Check if token needs refresh and add header hint
+        if (JwtUtils.needsRefresh(jwtPayload)) {
+          res.setHeader('X-Token-Refresh-Suggested', 'true');
+          res.setHeader('X-Token-Expires-In', JwtUtils.getTimeUntilExpiry(jwtPayload).toString());
+        }
+
         // Add user info to request for compatibility with existing code
         req.user = {
           claims: {
@@ -155,12 +162,22 @@ export const isAuthenticated: RequestHandler = async (req: any, res, next) => {
             last_name: user.lastName,
             profile_image_url: user.profileImageUrl
           },
-          authMethod: 'jwt'
+          authMethod: 'jwt',
+          tokenPayload: jwtPayload
         };
         return next();
       }
     } catch (error) {
       console.error('JWT authentication error:', error);
+      AuthLogger.logAuthEvent({
+        userId: jwtPayload?.userId,
+        email: jwtPayload?.email,
+        method: 'jwt',
+        action: 'refresh',
+        success: false,
+        errorCode: 'JWT_AUTH_ERROR',
+        metadata: { error: error instanceof Error ? error.message : 'Unknown error' }
+      });
       // Fall through to try Replit auth
     }
   }
@@ -169,7 +186,18 @@ export const isAuthenticated: RequestHandler = async (req: any, res, next) => {
   const user = req.user as any;
 
   if (!req.isAuthenticated() || !user?.expires_at) {
-    return res.status(401).json({ message: "Unauthorized" });
+    // Log failed authentication attempt
+    AuthLogger.logAuthEvent({
+      method: 'replit',
+      action: 'failed_attempt',
+      success: false,
+      errorCode: 'UNAUTHORIZED',
+      ip: req.ip || req.connection?.remoteAddress
+    });
+    return res.status(401).json({ 
+      message: "Unauthorized",
+      code: "UNAUTHORIZED"
+    });
   }
 
   const now = Math.floor(Date.now() / 1000);
