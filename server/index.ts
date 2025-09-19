@@ -1,7 +1,7 @@
 import express, { type Request, Response, NextFunction } from "express";
 import cookieParser from "cookie-parser";
 import helmet from "helmet";
-import { randomUUID } from "crypto";
+import { randomUUID, randomBytes } from "crypto";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { StripeWebhookService } from "./stripe";
@@ -43,12 +43,12 @@ if (isProduction) {
   
   // Set fallback values for optional variables
   if (!process.env.JWT_SECRET) {
-    process.env.JWT_SECRET = require('crypto').randomBytes(32).toString('hex');
+    process.env.JWT_SECRET = randomBytes(32).toString('hex');
     console.log('⚠️  Using generated JWT_SECRET for this session');
   }
   
   if (!process.env.SESSION_SECRET) {
-    process.env.SESSION_SECRET = require('crypto').randomBytes(32).toString('hex');
+    process.env.SESSION_SECRET = randomBytes(32).toString('hex');
     console.log('⚠️  Using generated SESSION_SECRET for this session');
   }
   
