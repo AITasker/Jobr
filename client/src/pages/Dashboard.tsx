@@ -539,6 +539,26 @@ export default function Dashboard() {
                 </div>
               </CardHeader>
               <CardContent>
+                {/* PDF Output Display */}
+                {cvData && cvData.originalContent && (
+                  <div className="mb-6 border rounded-lg p-4 bg-muted/50">
+                    <div className="flex items-center justify-between mb-3">
+                      <h4 className="text-sm font-medium text-foreground flex items-center gap-2">
+                        <FileText className="h-4 w-4" />
+                        Your CV Document
+                      </h4>
+                      <Badge variant="outline" className="text-xs">
+                        {cvData.fileName}
+                      </Badge>
+                    </div>
+                    <div className="bg-white dark:bg-gray-900 border rounded p-4 min-h-[300px] max-h-[400px] overflow-auto">
+                      <pre className="text-sm text-foreground whitespace-pre-wrap font-mono leading-relaxed">
+                        {cvData.originalContent}
+                      </pre>
+                    </div>
+                  </div>
+                )}
+                
                 {matchedJobsLoading ? (
                   <div className="flex items-center justify-center py-12">
                     <Loader2 className="h-8 w-8 animate-spin" />
