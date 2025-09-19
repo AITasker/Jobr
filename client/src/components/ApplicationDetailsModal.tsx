@@ -163,7 +163,7 @@ export function ApplicationDetailsModal({
   }
 
   return (
-    <Dialog open={isOpen} onOpenChange={onOpenChange}>
+    <Dialog open={isOpen} onOpenChange={onOpenChange} data-testid="application-details-modal">
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
@@ -178,12 +178,12 @@ export function ApplicationDetailsModal({
           </div>
         ) : application ? (
           <Tabs defaultValue="overview" className="space-y-4">
-            <TabsList className="grid w-full grid-cols-5">
-              <TabsTrigger value="overview">Overview</TabsTrigger>
-              <TabsTrigger value="timeline">Timeline</TabsTrigger>
-              <TabsTrigger value="insights">Insights</TabsTrigger>
-              <TabsTrigger value="email">Email Tracking</TabsTrigger>
-              <TabsTrigger value="actions">Actions</TabsTrigger>
+            <TabsList className="grid w-full grid-cols-5" data-testid="application-tabs">
+              <TabsTrigger value="overview" data-testid="tab-overview">Overview</TabsTrigger>
+              <TabsTrigger value="timeline" data-testid="tab-timeline">Timeline</TabsTrigger>
+              <TabsTrigger value="insights" data-testid="tab-insights">Insights</TabsTrigger>
+              <TabsTrigger value="email" data-testid="tab-email">Email Tracking</TabsTrigger>
+              <TabsTrigger value="actions" data-testid="tab-actions">Actions</TabsTrigger>
             </TabsList>
 
             {/* Overview Tab */}
@@ -197,6 +197,7 @@ export function ApplicationDetailsModal({
                     </div>
                     <Badge 
                       className={`text-white ${getStatusColor(application.status)}`}
+                      data-testid="application-current-status"
                     >
                       {getStatusText(application.status)}
                     </Badge>

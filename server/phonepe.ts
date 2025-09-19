@@ -62,6 +62,11 @@ interface PaymentResponse {
 }
 
 export class PhonePeService {
+  // Test mode detection
+  static isTestMode(): boolean {
+    return process.env.NODE_ENV === 'test' || process.env.TEST_USE_MOCKS === 'true';
+  }
+
   /**
    * Generate checksum for PhonePe API requests
    */
@@ -85,6 +90,27 @@ export class PhonePeService {
     redirectUrl: string
   ): Promise<PaymentResponse> {
     try {
+      // Use mock service in test mode
+      if (this.isTestMode()) {
+        console.log('💳 PhonePe Service: Using mock payment creation in test mode');
+        return {
+          success: true,
+          code: 'PAYMENT_INITIATED',
+          message: 'Payment initiated via mock service',
+          data: {
+            merchantId: 'MOCK_MERCHANT',
+            merchantTransactionId: `MOCK_TXN_${userId}_${Date.now()}`,
+            instrumentResponse: {
+              type: 'PAY_PAGE',
+              redirectInfo: {
+                url: 'https://mock-payment-page.test',
+                method: 'GET'
+              }
+            }
+          }
+        };
+      }
+
       if (!phonePeConfig) {
         throw new Error('PhonePe not configured');
       }

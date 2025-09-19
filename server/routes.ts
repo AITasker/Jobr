@@ -26,49 +26,53 @@ import { registerSchema, loginSchema, insertJobSchema, insertApplicationSchema, 
 import { createErrorResponse, ERROR_CODES } from "./utils/errorHandler";
 import { addAuthMetricsRoute } from "./authMetricsRoute";
 
-// Configure rate limiting for authentication routes
+// Configure rate limiting for authentication routes (disabled in test mode)
 const loginRateLimit = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 20, // Limit each IP to 20 login attempts per 15 minutes
+  max: process.env.NODE_ENV === 'test' || process.env.TEST_USE_MOCKS === 'true' ? 10000 : 20, // High limit in test mode
   message: {
     message: "Too many login attempts. Please try again in 15 minutes.",
     code: "RATE_LIMIT_EXCEEDED"
   },
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req) => process.env.NODE_ENV === 'test' || process.env.TEST_USE_MOCKS === 'true', // Skip rate limiting in test mode
 });
 
 const registerRateLimit = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 10, // Limit each IP to 10 registration attempts per 15 minutes
+  max: process.env.NODE_ENV === 'test' || process.env.TEST_USE_MOCKS === 'true' ? 10000 : 10, // High limit in test mode
   message: {
     message: "Too many registration attempts. Please try again in 15 minutes.",
     code: "RATE_LIMIT_EXCEEDED"
   },
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req) => process.env.NODE_ENV === 'test' || process.env.TEST_USE_MOCKS === 'true', // Skip rate limiting in test mode
 });
 
 const authRateLimit = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 10, // Limit each IP to 10 requests per windowMs for other auth routes
+  max: process.env.NODE_ENV === 'test' || process.env.TEST_USE_MOCKS === 'true' ? 10000 : 10, // High limit in test mode
   message: {
     message: "Too many authentication attempts. Please try again in 15 minutes.",
     code: "RATE_LIMIT_EXCEEDED"
   },
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req) => process.env.NODE_ENV === 'test' || process.env.TEST_USE_MOCKS === 'true', // Skip rate limiting in test mode
 });
 
 const generalRateLimit = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes  
-  max: 100, // Limit each IP to 100 requests per windowMs for general routes
+  max: process.env.NODE_ENV === 'test' || process.env.TEST_USE_MOCKS === 'true' ? 10000 : 100, // High limit in test mode
   message: {
     message: "Too many requests. Please try again later.",
     code: "RATE_LIMIT_EXCEEDED"
   },
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req) => process.env.NODE_ENV === 'test' || process.env.TEST_USE_MOCKS === 'true', // Skip rate limiting in test mode
 });
 
 // Configure multer for file uploads
@@ -132,6 +136,50 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Auth middleware
   await setupAuth(app);
+
+  // Test hook endpoint - only available in test mode
+  app.get('/api/test/mock-status', (req, res) => {
+    if (process.env.NODE_ENV !== 'test' && process.env.TEST_USE_MOCKS !== 'true') {
+      return res.status(404).json({ message: 'Not found' });
+    }
+
+    try {
+      const mockStatus = {
+        testMode: true,
+        services: {
+          openai: {
+            available: true,
+            usingMock: OpenAIService.isTestMode(),
+            realService: !!process.env.OPENAI_API_KEY
+          },
+          sendgrid: {
+            available: true,
+            usingMock: process.env.NODE_ENV === 'test' || process.env.TEST_USE_MOCKS === 'true',
+            realService: !!process.env.SENDGRID_API_KEY
+          },
+          stripe: {
+            available: true,
+            usingMock: process.env.NODE_ENV === 'test' || process.env.TEST_USE_MOCKS === 'true',
+            realService: !!process.env.STRIPE_SECRET_KEY
+          },
+          phonepe: {
+            available: true,
+            usingMock: process.env.NODE_ENV === 'test' || process.env.TEST_USE_MOCKS === 'true',
+            realService: !!(process.env.PHONEPE_MERCHANT_ID && process.env.PHONEPE_SALT_KEY)
+          }
+        },
+        rateLimiting: {
+          disabled: true,
+          environment: process.env.NODE_ENV
+        },
+        timestamp: new Date().toISOString()
+      };
+
+      res.json(mockStatus);
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to get mock status', message: error instanceof Error ? error.message : 'Unknown error' });
+    }
+  });
 
   // Integration status endpoint - exempt from rate limiting for health checks
   app.get('/api/integrations/status', (req, res) => {

@@ -28,7 +28,15 @@ export interface EmailData {
 export class SendGridService {
   private static readonly DEFAULT_FROM = 'noreply@careercopilot.app';
 
+  // Test mode detection
+  static isTestMode(): boolean {
+    return process.env.NODE_ENV === 'test' || process.env.TEST_USE_MOCKS === 'true';
+  }
+
   static isAvailable(): boolean {
+    if (this.isTestMode()) {
+      return true; // Always available in test mode with mocks
+    }
     return !!sendgrid;
   }
 
@@ -37,6 +45,17 @@ export class SendGridService {
    */
   static async sendEmail(emailData: EmailData): Promise<{ success: boolean; message: string; code?: string }> {
     try {
+      // Use mock service in test mode
+      if (this.isTestMode()) {
+        console.log('📧 SendGrid Service: Using mock service for email in test mode');
+        console.log(`Mock Email - To: ${emailData.to}, Subject: ${emailData.subject}`);
+        return {
+          success: true,
+          message: 'Email sent via mock service',
+          code: 'MOCK_SUCCESS'
+        };
+      }
+
       if (!SendGridService.isAvailable()) {
         // Fallback: Log to console in development/when SendGrid not configured
         console.log('📧 Email Service Fallback (SendGrid not configured):');
