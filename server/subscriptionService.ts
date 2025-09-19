@@ -39,7 +39,12 @@ export class SubscriptionService {
   };
 
   static getPlanLimits(plan: PlanType): PlanLimits {
-    return this.PLAN_LIMITS[plan];
+    const limits = this.PLAN_LIMITS[plan];
+    if (!limits) {
+      console.warn(`SubscriptionService: Invalid plan type: ${plan}, defaulting to Free`);
+      return this.PLAN_LIMITS['Free'];
+    }
+    return limits;
   }
 
   static async canUserCreateApplication(userId: string): Promise<{
@@ -174,9 +179,36 @@ export class SubscriptionService {
   } | null> {
     try {
       const user = await storage.getUser(userId);
-      if (!user) return null;
+      if (!user) {
+        console.warn(`SubscriptionService: User not found for ID: ${userId}`);
+        return null;
+      }
 
-      const limits = this.getPlanLimits(user.plan as PlanType);
+      // Ensure user has a valid plan, default to Free if invalid
+      const userPlan = user.plan as PlanType;
+      const validPlans: PlanType[] = ['Free', 'Premium', 'Pro'];
+      const effectivePlan = validPlans.includes(userPlan) ? userPlan : 'Free';
+      
+      const limits = this.getPlanLimits(effectivePlan);
+      
+      // Safeguard: if limits is still undefined, use Free plan defaults
+      if (!limits) {
+        console.error(`SubscriptionService: Unable to get plan limits for plan: ${effectivePlan}`);
+        const defaultLimits = this.PLAN_LIMITS['Free'];
+        
+        return {
+          currentPlan: 'Free',
+          applicationsThisMonth: user.applicationsThisMonth || 0,
+          applicationLimit: defaultLimits.monthlyApplications,
+          remainingApplications: Math.max(0, defaultLimits.monthlyApplications - (user.applicationsThisMonth || 0)),
+          hasAIFeatures: defaultLimits.aiFeatures,
+          hasAdvancedAnalytics: defaultLimits.advancedAnalytics,
+          hasInterviewPrep: defaultLimits.interviewPrep,
+          daysSinceReset: 0,
+          nextResetDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+        };
+      }
+
       const now = new Date();
       const resetDate = user.monthlyApplicationsReset || user.createdAt || now;
       const daysSinceReset = Math.floor((now.getTime() - resetDate.getTime()) / (1000 * 60 * 60 * 24));
@@ -186,13 +218,13 @@ export class SubscriptionService {
       nextResetDate.setDate(nextResetDate.getDate() + 30);
 
       const applicationLimit = limits.monthlyApplications === -1 ? 999999 : limits.monthlyApplications;
-      const applicationsThisMonth = daysSinceReset >= 30 ? 0 : user.applicationsThisMonth;
+      const applicationsThisMonth = daysSinceReset >= 30 ? 0 : (user.applicationsThisMonth || 0);
       const remainingApplications = limits.monthlyApplications === -1 
         ? -1 // unlimited
         : Math.max(0, applicationLimit - applicationsThisMonth);
 
       return {
-        currentPlan: user.plan as PlanType,
+        currentPlan: effectivePlan,
         applicationsThisMonth,
         applicationLimit,
         remainingApplications,
@@ -203,7 +235,7 @@ export class SubscriptionService {
         nextResetDate
       };
     } catch (error) {
-      console.error('Error getting usage stats:', error);
+      console.error('SubscriptionService: Error getting usage stats:', error);
       return null;
     }
   }

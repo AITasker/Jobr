@@ -18,6 +18,10 @@ import { ApplicationPreparationService } from "./applicationPreparationService";
 import { AuthService } from "./authService";
 import { JwtUtils } from "./jwtUtils";
 import { SubscriptionService } from "./subscriptionService";
+import { EmailMonitoringService } from "./emailMonitoringService";
+import { ApplicationLifecycleService } from "./applicationLifecycleService";
+import { NotificationService } from "./notificationService";
+import { AnalyticsService } from "./analyticsService";
 import { registerSchema, loginSchema, insertJobSchema, insertApplicationSchema, createSubscriptionSchema, updateSubscriptionSchema, phoneRequestSchema, phoneVerifySchema, jobApplySchema, cvTailorSchema, applicationUpdateSchema, batchPrepareSchema, subscriptionCancelSchema, bookmarkJobSchema, jobSearchSchema, saveSearchSchema, updatePreferencesSchema, VALID_PRICE_MAPPINGS } from "@shared/schema";
 import { createErrorResponse, ERROR_CODES } from "./utils/errorHandler";
 import { addAuthMetricsRoute } from "./authMetricsRoute";
@@ -2082,10 +2086,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // =======================================
 
   // Import the new services for comprehensive application management
-  const { EmailMonitoringService } = require('./emailMonitoringService');
-  const { ApplicationLifecycleService } = require('./applicationLifecycleService');
-  const { NotificationService } = require('./notificationService');
-  const { AnalyticsService } = require('./analyticsService');
+  // (Note: These services are imported at the top of the file)
 
   // =======================================
   // SENDGRID WEBHOOK SECURITY MIDDLEWARE
