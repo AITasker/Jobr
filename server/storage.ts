@@ -10,6 +10,11 @@ import {
   subscriptions,
   stripeEvents,
   paymentRequests,
+  savedSearches,
+  searchHistory,
+  jobBookmarks,
+  userPreferences,
+  jobAlerts,
   type User,
   type UpsertUser,
   type Cv,
@@ -31,7 +36,18 @@ import {
   type StripeEvent,
   type InsertStripeEvent,
   type PaymentRequest,
-  type InsertPaymentRequest
+  type InsertPaymentRequest,
+  type SavedSearch,
+  type InsertSavedSearch,
+  type SearchHistory,
+  type InsertSearchHistory,
+  type JobBookmark,
+  type InsertJobBookmark,
+  type UserPreferences,
+  type InsertUserPreferences,
+  type JobAlert,
+  type InsertJobAlert,
+  type JobSearchFilters
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, sql, or, gte, ilike } from "drizzle-orm";
@@ -106,6 +122,39 @@ export interface IStorage {
   setPaymentRequestByKey(paymentRequest: InsertPaymentRequest): Promise<PaymentRequest>;
   updatePaymentRequestStatus(id: string, status: string, metadata?: any): Promise<PaymentRequest>;
   cleanupExpiredPaymentRequests(): Promise<void>;
+
+  // Enhanced Job Search operations
+  getJobsWithFilters(filters: JobSearchFilters): Promise<Job[]>;
+  searchJobsWithAI(query: string, filters: JobSearchFilters, userId?: string): Promise<Job[]>;
+  
+  // Saved Search operations
+  createSavedSearch(savedSearch: InsertSavedSearch): Promise<SavedSearch>;
+  getSavedSearchesByUserId(userId: string): Promise<SavedSearch[]>;
+  updateSavedSearch(id: string, updates: Partial<SavedSearch>): Promise<SavedSearch>;
+  deleteSavedSearch(id: string): Promise<void>;
+  
+  // Search History operations
+  createSearchHistory(searchHistory: InsertSearchHistory): Promise<SearchHistory>;
+  getSearchHistoryByUserId(userId: string, limit?: number): Promise<SearchHistory[]>;
+  clearSearchHistory(userId: string): Promise<void>;
+  
+  // Job Bookmark operations
+  createJobBookmark(bookmark: InsertJobBookmark): Promise<JobBookmark>;
+  getJobBookmarksByUserId(userId: string): Promise<(JobBookmark & { job: Job })[]>;
+  deleteJobBookmark(userId: string, jobId: string): Promise<void>;
+  isJobBookmarked(userId: string, jobId: string): Promise<boolean>;
+  
+  // User Preferences operations
+  createUserPreferences(preferences: InsertUserPreferences): Promise<UserPreferences>;
+  getUserPreferences(userId: string): Promise<UserPreferences | undefined>;
+  updateUserPreferences(userId: string, updates: Partial<UserPreferences>): Promise<UserPreferences>;
+  
+  // Job Alert operations
+  createJobAlert(alert: InsertJobAlert): Promise<JobAlert>;
+  getJobAlertsByUserId(userId: string): Promise<JobAlert[]>;
+  updateJobAlert(id: string, updates: Partial<JobAlert>): Promise<JobAlert>;
+  deleteJobAlert(id: string): Promise<void>;
+  getActiveJobAlerts(): Promise<JobAlert[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -557,6 +606,229 @@ export class DatabaseStorage implements IStorage {
     const now = new Date();
     await db.delete(paymentRequests)
       .where(sql`${paymentRequests.expiresAt} < ${now}`);
+  }
+
+  // Enhanced Job Search operations
+  async getJobsWithFilters(filters: JobSearchFilters): Promise<Job[]> {
+    let query = db.select().from(jobs).where(eq(jobs.isActive, true));
+    
+    const conditions = [];
+    
+    if (filters.location) {
+      conditions.push(ilike(jobs.location, `%${filters.location}%`));
+    }
+    
+    if (filters.type) {
+      conditions.push(ilike(jobs.type, `%${filters.type}%`));
+    }
+    
+    if (filters.company) {
+      conditions.push(ilike(jobs.company, `%${filters.company}%`));
+    }
+    
+    if (filters.postedWithin) {
+      const daysMap = {
+        '1day': 1,
+        '3days': 3,
+        '1week': 7,
+        '2weeks': 14,
+        '1month': 30
+      };
+      const days = daysMap[filters.postedWithin];
+      const cutoffDate = new Date();
+      cutoffDate.setDate(cutoffDate.getDate() - days);
+      conditions.push(gte(jobs.postedDate, cutoffDate));
+    }
+    
+    if (conditions.length > 0) {
+      query = query.where(and(...conditions)) as any;
+    }
+    
+    // Apply sorting
+    if (filters.sortBy === 'date') {
+      query = query.orderBy(filters.sortOrder === 'asc' ? jobs.postedDate : desc(jobs.postedDate)) as any;
+    } else {
+      query = query.orderBy(desc(jobs.postedDate)) as any;
+    }
+    
+    // Apply pagination
+    if (filters.limit) {
+      query = query.limit(filters.limit) as any;
+    }
+    
+    if (filters.offset) {
+      query = query.offset(filters.offset) as any;
+    }
+    
+    return await query;
+  }
+  
+  async searchJobsWithAI(query: string, filters: JobSearchFilters, userId?: string): Promise<Job[]> {
+    // For now, fallback to regular search with text matching
+    const conditions = [eq(jobs.isActive, true)];
+    
+    if (query) {
+      conditions.push(or(
+        ilike(jobs.title, `%${query}%`),
+        ilike(jobs.description, `%${query}%`),
+        ilike(jobs.company, `%${query}%`)
+      ));
+    }
+    
+    // Apply additional filters
+    if (filters.location) {
+      conditions.push(ilike(jobs.location, `%${filters.location}%`));
+    }
+    
+    if (filters.type) {
+      conditions.push(ilike(jobs.type, `%${filters.type}%`));
+    }
+    
+    const result = await db.select()
+      .from(jobs)
+      .where(and(...conditions))
+      .orderBy(desc(jobs.postedDate))
+      .limit(filters.limit || 20);
+      
+    return result;
+  }
+
+  // Saved Search operations
+  async createSavedSearch(savedSearchData: InsertSavedSearch): Promise<SavedSearch> {
+    const [savedSearch] = await db.insert(savedSearches).values(savedSearchData).returning();
+    return savedSearch;
+  }
+
+  async getSavedSearchesByUserId(userId: string): Promise<SavedSearch[]> {
+    return await db.select()
+      .from(savedSearches)
+      .where(eq(savedSearches.userId, userId))
+      .orderBy(desc(savedSearches.updatedAt));
+  }
+
+  async updateSavedSearch(id: string, updates: Partial<SavedSearch>): Promise<SavedSearch> {
+    const [savedSearch] = await db
+      .update(savedSearches)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(savedSearches.id, id))
+      .returning();
+    return savedSearch;
+  }
+
+  async deleteSavedSearch(id: string): Promise<void> {
+    await db.delete(savedSearches).where(eq(savedSearches.id, id));
+  }
+
+  // Search History operations
+  async createSearchHistory(searchHistoryData: InsertSearchHistory): Promise<SearchHistory> {
+    const [searchHistoryItem] = await db.insert(searchHistory).values(searchHistoryData).returning();
+    return searchHistoryItem;
+  }
+
+  async getSearchHistoryByUserId(userId: string, limit: number = 10): Promise<SearchHistory[]> {
+    return await db.select()
+      .from(searchHistory)
+      .where(eq(searchHistory.userId, userId))
+      .orderBy(desc(searchHistory.createdAt))
+      .limit(limit);
+  }
+
+  async clearSearchHistory(userId: string): Promise<void> {
+    await db.delete(searchHistory).where(eq(searchHistory.userId, userId));
+  }
+
+  // Job Bookmark operations
+  async createJobBookmark(bookmarkData: InsertJobBookmark): Promise<JobBookmark> {
+    const [bookmark] = await db.insert(jobBookmarks).values(bookmarkData).returning();
+    return bookmark;
+  }
+
+  async getJobBookmarksByUserId(userId: string): Promise<(JobBookmark & { job: Job })[]> {
+    const results = await db.select()
+      .from(jobBookmarks)
+      .innerJoin(jobs, eq(jobBookmarks.jobId, jobs.id))
+      .where(eq(jobBookmarks.userId, userId))
+      .orderBy(desc(jobBookmarks.createdAt));
+    
+    return results.map(result => ({
+      ...result.job_bookmarks,
+      job: result.jobs
+    }));
+  }
+
+  async deleteJobBookmark(userId: string, jobId: string): Promise<void> {
+    await db.delete(jobBookmarks)
+      .where(and(
+        eq(jobBookmarks.userId, userId),
+        eq(jobBookmarks.jobId, jobId)
+      ));
+  }
+
+  async isJobBookmarked(userId: string, jobId: string): Promise<boolean> {
+    const [bookmark] = await db.select()
+      .from(jobBookmarks)
+      .where(and(
+        eq(jobBookmarks.userId, userId),
+        eq(jobBookmarks.jobId, jobId)
+      ))
+      .limit(1);
+    
+    return !!bookmark;
+  }
+
+  // User Preferences operations
+  async createUserPreferences(preferencesData: InsertUserPreferences): Promise<UserPreferences> {
+    const [preferences] = await db.insert(userPreferences).values(preferencesData).returning();
+    return preferences;
+  }
+
+  async getUserPreferences(userId: string): Promise<UserPreferences | undefined> {
+    const [preferences] = await db.select()
+      .from(userPreferences)
+      .where(eq(userPreferences.userId, userId));
+    return preferences;
+  }
+
+  async updateUserPreferences(userId: string, updates: Partial<UserPreferences>): Promise<UserPreferences> {
+    const [preferences] = await db
+      .update(userPreferences)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(userPreferences.userId, userId))
+      .returning();
+    return preferences;
+  }
+
+  // Job Alert operations
+  async createJobAlert(alertData: InsertJobAlert): Promise<JobAlert> {
+    const [alert] = await db.insert(jobAlerts).values(alertData).returning();
+    return alert;
+  }
+
+  async getJobAlertsByUserId(userId: string): Promise<JobAlert[]> {
+    return await db.select()
+      .from(jobAlerts)
+      .where(eq(jobAlerts.userId, userId))
+      .orderBy(desc(jobAlerts.createdAt));
+  }
+
+  async updateJobAlert(id: string, updates: Partial<JobAlert>): Promise<JobAlert> {
+    const [alert] = await db
+      .update(jobAlerts)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(jobAlerts.id, id))
+      .returning();
+    return alert;
+  }
+
+  async deleteJobAlert(id: string): Promise<void> {
+    await db.delete(jobAlerts).where(eq(jobAlerts.id, id));
+  }
+
+  async getActiveJobAlerts(): Promise<JobAlert[]> {
+    return await db.select()
+      .from(jobAlerts)
+      .where(eq(jobAlerts.isActive, true))
+      .orderBy(jobAlerts.nextScheduled);
   }
 }
 

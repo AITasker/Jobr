@@ -226,14 +226,96 @@ export const paymentRequests = pgTable("payment_requests", {
   index("idx_payment_requests_expires_at").on(table.expiresAt),
 ]);
 
+// Saved searches table for storing user search queries and filters
+export const savedSearches = pgTable("saved_searches", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  name: varchar("name").notNull(), // User-defined name for the search
+  query: text("query"), // Search query text
+  filters: jsonb("filters"), // JSON object with location, type, salary, etc.
+  isDefault: boolean("is_default").default(false),
+  alertEnabled: boolean("alert_enabled").default(false), // Whether to send alerts for this search
+  lastAlertSent: timestamp("last_alert_sent"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_saved_searches_user_id").on(table.userId),
+  index("idx_saved_searches_alert_enabled").on(table.alertEnabled),
+]);
+
+// Search history table for storing recent searches
+export const searchHistory = pgTable("search_history", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  query: text("query"), // Search query text
+  filters: jsonb("filters"), // JSON object with applied filters
+  resultsCount: integer("results_count").default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_search_history_user_id").on(table.userId),
+  index("idx_search_history_created_at").on(table.createdAt.desc()),
+]);
+
+// Job bookmarks/favorites table
+export const jobBookmarks = pgTable("job_bookmarks", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  jobId: varchar("job_id").notNull().references(() => jobs.id, { onDelete: "cascade" }),
+  notes: text("notes"), // User notes about this job
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  unique("unique_user_job_bookmark").on(table.userId, table.jobId),
+  index("idx_job_bookmarks_user_id").on(table.userId),
+]);
+
+// User preferences table for personalized recommendations
+export const userPreferences = pgTable("user_preferences", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  preferredLocations: text("preferred_locations").array(),
+  preferredJobTypes: text("preferred_job_types").array(),
+  salaryRange: jsonb("salary_range"), // {min: number, max: number, currency: string}
+  workArrangement: varchar("work_arrangement"), // remote, hybrid, onsite, flexible
+  experienceLevel: varchar("experience_level"), // entry, mid, senior, executive
+  industries: text("industries").array(),
+  companySize: varchar("company_size"), // startup, small, medium, large, enterprise
+  benefits: text("benefits").array(), // health_insurance, flexible_hours, etc.
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  unique("unique_user_preferences").on(table.userId),
+  index("idx_user_preferences_user_id").on(table.userId),
+]);
+
+// Job alerts table for notification management
+export const jobAlerts = pgTable("job_alerts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  savedSearchId: varchar("saved_search_id").references(() => savedSearches.id, { onDelete: "cascade" }),
+  frequency: varchar("frequency").default("daily").notNull(), // daily, weekly, immediate
+  isActive: boolean("is_active").default(true),
+  lastSent: timestamp("last_sent"),
+  nextScheduled: timestamp("next_scheduled"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_job_alerts_user_id").on(table.userId),
+  index("idx_job_alerts_next_scheduled").on(table.nextScheduled),
+]);
+
 // Relations
-export const usersRelations = relations(users, ({ many }) => ({
+export const usersRelations = relations(users, ({ many, one }) => ({
   cvs: many(cvs),
   applications: many(applications),
   apiUsage: many(apiUsage),
   authAccounts: many(authAccounts),
   subscriptions: many(subscriptions),
   paymentRequests: many(paymentRequests),
+  savedSearches: many(savedSearches),
+  searchHistory: many(searchHistory),
+  jobBookmarks: many(jobBookmarks),
+  preferences: one(userPreferences),
+  jobAlerts: many(jobAlerts),
 }));
 
 export const paymentRequestsRelations = relations(paymentRequests, ({ one }) => ({
@@ -286,6 +368,50 @@ export const apiUsageRelations = relations(apiUsage, ({ one }) => ({
   }),
 }));
 
+export const savedSearchesRelations = relations(savedSearches, ({ one, many }) => ({
+  user: one(users, {
+    fields: [savedSearches.userId],
+    references: [users.id],
+  }),
+  jobAlerts: many(jobAlerts),
+}));
+
+export const searchHistoryRelations = relations(searchHistory, ({ one }) => ({
+  user: one(users, {
+    fields: [searchHistory.userId],
+    references: [users.id],
+  }),
+}));
+
+export const jobBookmarksRelations = relations(jobBookmarks, ({ one }) => ({
+  user: one(users, {
+    fields: [jobBookmarks.userId],
+    references: [users.id],
+  }),
+  job: one(jobs, {
+    fields: [jobBookmarks.jobId],
+    references: [jobs.id],
+  }),
+}));
+
+export const userPreferencesRelations = relations(userPreferences, ({ one }) => ({
+  user: one(users, {
+    fields: [userPreferences.userId],
+    references: [users.id],
+  }),
+}));
+
+export const jobAlertsRelations = relations(jobAlerts, ({ one }) => ({
+  user: one(users, {
+    fields: [jobAlerts.userId],
+    references: [users.id],
+  }),
+  savedSearch: one(savedSearches, {
+    fields: [jobAlerts.savedSearchId],
+    references: [savedSearches.id],
+  }),
+}));
+
 // Zod schemas for validation
 export const insertUserSchema = createInsertSchema(users);
 export const insertCvSchema = createInsertSchema(cvs).omit({ id: true, createdAt: true, updatedAt: true });
@@ -298,6 +424,11 @@ export const insertOtpCodeSchema = createInsertSchema(otpCodes).omit({ id: true,
 export const insertStripeEventSchema = createInsertSchema(stripeEvents).omit({ id: true, createdAt: true });
 export const insertSubscriptionSchema = createInsertSchema(subscriptions).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertPaymentRequestSchema = createInsertSchema(paymentRequests).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertSavedSearchSchema = createInsertSchema(savedSearches).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertSearchHistorySchema = createInsertSchema(searchHistory).omit({ id: true, createdAt: true });
+export const insertJobBookmarkSchema = createInsertSchema(jobBookmarks).omit({ id: true, createdAt: true });
+export const insertUserPreferencesSchema = createInsertSchema(userPreferences).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertJobAlertSchema = createInsertSchema(jobAlerts).omit({ id: true, createdAt: true, updatedAt: true });
 
 // Additional auth-specific schemas
 export const registerSchema = z.object({
@@ -406,3 +537,65 @@ export type LoginData = z.infer<typeof loginSchema>;
 export type PlanType = z.infer<typeof planSchema>;
 export type CreateSubscriptionData = z.infer<typeof createSubscriptionSchema>;
 export type UpdateSubscriptionData = z.infer<typeof updateSubscriptionSchema>;
+
+// New types for enhanced job search features
+export type InsertSavedSearch = z.infer<typeof insertSavedSearchSchema>;
+export type SavedSearch = typeof savedSearches.$inferSelect;
+export type InsertSearchHistory = z.infer<typeof insertSearchHistorySchema>;
+export type SearchHistory = typeof searchHistory.$inferSelect;
+export type InsertJobBookmark = z.infer<typeof insertJobBookmarkSchema>;
+export type JobBookmark = typeof jobBookmarks.$inferSelect;
+export type InsertUserPreferences = z.infer<typeof insertUserPreferencesSchema>;
+export type UserPreferences = typeof userPreferences.$inferSelect;
+export type InsertJobAlert = z.infer<typeof insertJobAlertSchema>;
+export type JobAlert = typeof jobAlerts.$inferSelect;
+
+// Enhanced search schemas for better filtering
+export const jobSearchSchema = z.object({
+  q: z.string().optional(), // Search query
+  location: z.string().optional(),
+  type: z.string().optional(),
+  salaryMin: z.number().optional(),
+  salaryMax: z.number().optional(),
+  experienceLevel: z.enum(['entry', 'mid', 'senior', 'executive']).optional(),
+  workArrangement: z.enum(['remote', 'hybrid', 'onsite', 'flexible']).optional(),
+  company: z.string().optional(),
+  industry: z.string().optional(),
+  postedWithin: z.enum(['1day', '3days', '1week', '2weeks', '1month']).optional(),
+  sortBy: z.enum(['relevance', 'date', 'salary', 'match_score']).optional(),
+  sortOrder: z.enum(['asc', 'desc']).optional(),
+  limit: z.number().min(1).max(100).optional(),
+  offset: z.number().min(0).optional(),
+});
+
+export const saveSearchSchema = z.object({
+  name: z.string().min(1).max(100),
+  query: z.string().optional(),
+  filters: z.record(z.any()),
+  alertEnabled: z.boolean().optional(),
+});
+
+export const bookmarkJobSchema = z.object({
+  jobId: z.string().uuid(),
+  notes: z.string().max(500).optional(),
+});
+
+export const updatePreferencesSchema = z.object({
+  preferredLocations: z.array(z.string()).optional(),
+  preferredJobTypes: z.array(z.string()).optional(),
+  salaryRange: z.object({
+    min: z.number(),
+    max: z.number(),
+    currency: z.string().default('USD'),
+  }).optional(),
+  workArrangement: z.enum(['remote', 'hybrid', 'onsite', 'flexible']).optional(),
+  experienceLevel: z.enum(['entry', 'mid', 'senior', 'executive']).optional(),
+  industries: z.array(z.string()).optional(),
+  companySize: z.enum(['startup', 'small', 'medium', 'large', 'enterprise']).optional(),
+  benefits: z.array(z.string()).optional(),
+});
+
+export type JobSearchFilters = z.infer<typeof jobSearchSchema>;
+export type SaveSearchData = z.infer<typeof saveSearchSchema>;
+export type BookmarkJobData = z.infer<typeof bookmarkJobSchema>;
+export type UpdatePreferencesData = z.infer<typeof updatePreferencesSchema>;
