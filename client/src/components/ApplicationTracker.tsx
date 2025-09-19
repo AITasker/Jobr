@@ -125,9 +125,9 @@ export function ApplicationTracker({ applications, onViewDetails, onEditApplicat
       </div>
 
       {/* Applications List */}
-      <div className="space-y-4">
+      <div className="space-y-4" data-testid="applications-list">
         {applications.map((app) => (
-          <Card key={app.id} className="transition-all duration-200 hover-elevate" data-testid={`application-card-${app.id}`}>
+          <Card key={app.id} className="transition-all duration-200 hover-elevate" data-testid="application-item">
             <CardContent className="p-6">
               <div className="flex items-start justify-between mb-4">
                 <div className="flex-1">
