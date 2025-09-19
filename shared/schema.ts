@@ -45,7 +45,9 @@ export const users = pgTable("users", {
   lastApiCallReset: timestamp("last_api_call_reset").defaultNow(),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (table) => [
+  index("idx_users_stripe_customer").on(table.stripeCustomerId).where(sql`${table.stripeCustomerId} IS NOT NULL`),
+]);
 
 // Subscriptions table for tracking subscription history and events
 export const subscriptions = pgTable("subscriptions", {
@@ -82,7 +84,9 @@ export const cvs = pgTable("cvs", {
   education: text("education"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (table) => [
+  index("idx_cvs_user_created_at").on(table.userId, table.createdAt.desc()),
+]);
 
 // Job listings table
 export const jobs = pgTable("jobs", {
@@ -97,7 +101,9 @@ export const jobs = pgTable("jobs", {
   postedDate: timestamp("posted_date").defaultNow(),
   isActive: boolean("is_active").default(true),
   createdAt: timestamp("created_at").defaultNow(),
-});
+}, (table) => [
+  index("idx_jobs_active_posted_date").on(table.postedDate.desc()).where(sql`${table.isActive} = true`),
+]);
 
 // Job applications table
 export const applications = pgTable("applications", {
@@ -118,6 +124,8 @@ export const applications = pgTable("applications", {
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => ({
   uniqueUserJob: unique("unique_user_job").on(table.userId, table.jobId),
+  idxApplicationsUserAppliedDate: index("idx_applications_user_applied_date").on(table.userId, table.appliedDate.desc()),
+  idxApplicationsStatus: index("idx_applications_status").on(table.status),
 }));
 
 // API usage tracking table for detailed analytics

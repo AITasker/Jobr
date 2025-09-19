@@ -150,7 +150,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getCvByUserId(userId: string): Promise<Cv | undefined> {
-    const [cv] = await db.select().from(cvs).where(eq(cvs.userId, userId)).orderBy(desc(cvs.createdAt));
+    const [cv] = await db.select().from(cvs).where(eq(cvs.userId, userId)).orderBy(desc(cvs.createdAt)).limit(1);
     return cv;
   }
 
