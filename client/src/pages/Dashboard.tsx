@@ -154,7 +154,7 @@ export default function Dashboard() {
   const cvOk = (cv: CVResponse | null): boolean => !!(cv && typeof cv.id === 'string' && cv.id.length && cv.userId && cv.fileName)
 
   // Enhanced CV validation with proper type checking
-  const hasCvData = cvOk(cvData)
+  const hasCvData = cvOk(cvData || null)
 
   // Get matched jobs with proper CV validation
   const { data: matchedJobsData, isLoading: matchedJobsLoading, error: matchedJobsError } = useQuery<MatchedJobsResponse>({
@@ -330,9 +330,17 @@ export default function Dashboard() {
       case 'date':
         return sorted.sort((a, b) => new Date(b.job.postedDate || 0).getTime() - new Date(a.job.postedDate || 0).getTime())
       case 'salary-high':
-        return sorted.sort((a, b) => (b.job.salaryMax || 0) - (a.job.salaryMax || 0))
+        return sorted.sort((a, b) => {
+          const aMax = a.job.salary ? parseInt(a.job.salary.replace(/\D/g, '')) : 0
+          const bMax = b.job.salary ? parseInt(b.job.salary.replace(/\D/g, '')) : 0
+          return bMax - aMax
+        })
       case 'salary-low':
-        return sorted.sort((a, b) => (a.job.salaryMin || 0) - (b.job.salaryMin || 0))
+        return sorted.sort((a, b) => {
+          const aMin = a.job.salary ? parseInt(a.job.salary.replace(/\D/g, '')) : 0
+          const bMin = b.job.salary ? parseInt(b.job.salary.replace(/\D/g, '')) : 0
+          return aMin - bMin
+        })
       case 'company':
         return sorted.sort((a, b) => a.job.company.localeCompare(b.job.company))
       case 'relevance':
@@ -575,7 +583,16 @@ export default function Dashboard() {
                 ) : matchedJobsData?.matches && matchedJobsData.matches.length > 0 ? (
                   <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
                     {matchedJobsData.matches.map((jobMatch: JobMatchResponse) => (
-                      <JobCard key={jobMatch.job.id} jobMatch={jobMatch} />
+                      <JobCard 
+                        key={jobMatch.job.id} 
+                        jobMatch={{
+                          ...jobMatch,
+                          job: {
+                            ...jobMatch.job,
+                            salary: jobMatch.job.salary || undefined
+                          }
+                        } as any} 
+                      />
                     ))}
                   </div>
                 ) : hasCvData ? (
@@ -987,7 +1004,13 @@ export default function Dashboard() {
                         {sortJobResults(searchResults.results, sortBy).map((jobMatch: JobMatchResponse) => (
                           <JobCard 
                             key={jobMatch.job.id} 
-                            jobMatch={jobMatch}
+                            jobMatch={{
+                              ...jobMatch,
+                              job: {
+                                ...jobMatch.job,
+                                salary: jobMatch.job.salary || undefined
+                              }
+                            } as any}
                             onAddToComparison={() => addToComparison(jobMatch)}
                             isInComparison={compareJobs.some(job => job.job.id === jobMatch.job.id)}
                           />
@@ -1059,9 +1082,9 @@ export default function Dashboard() {
                   </div>
                 ) : applications && applications.length > 0 ? (
                   <ApplicationTracker 
-                    applications={applications}
+                    applications={applications as any}
                     onEditApplication={(app) => {
-                      setSelectedApplication(app as ApplicationWithJob)
+                      setSelectedApplication(app as any)
                       setIsEditApplicationModalOpen(true)
                     }}
                   />
@@ -1107,7 +1130,7 @@ export default function Dashboard() {
         />
         
         <EditApplicationModal
-          application={selectedApplication}
+          application={selectedApplication as any}
           isOpen={isEditApplicationModalOpen}
           onOpenChange={setIsEditApplicationModalOpen}
         />
