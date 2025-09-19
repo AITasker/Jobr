@@ -4,19 +4,15 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
-import { useQuery, useMutation } from '@tanstack/react-query'
-import { apiRequest, queryClient } from '@/lib/queryClient'
+import { useQuery } from '@tanstack/react-query'
 import { useToast } from '@/hooks/use-toast'
 import { CreditCard, Calendar, Users, Zap, BarChart3, MessageSquare, Crown } from 'lucide-react'
 
-interface SubscriptionData {
-  currentPlan: string
-  subscriptionStatus: string
-  currentPeriodEnd?: string
+interface UserData {
+  id: string
+  email: string
+  plan: string
   applicationsThisMonth: number
-  applicationsLimit: number
-  stripeCustomerId?: string
-  activeSubscription?: any
 }
 
 interface UsageStats {
@@ -34,82 +30,19 @@ interface UsageStats {
 export default function Billing() {
   const { user, isAuthenticated } = useAuth()
   const { toast } = useToast()
-  const [isLoading, setIsLoading] = useState(false)
 
-  // Fetch subscription data
-  const { data: subscription, isLoading: subscriptionLoading } = useQuery<SubscriptionData>({
-    queryKey: ['/api/subscription'],
-    enabled: isAuthenticated,
-  })
-
-  // Fetch usage statistics
+  // Fetch usage statistics from subscription service
   const { data: usageStats, isLoading: usageLoading } = useQuery<UsageStats>({
     queryKey: ['/api/subscription/usage'],
     enabled: isAuthenticated,
   })
 
-  // Cancel subscription mutation
-  const cancelSubscription = useMutation({
-    mutationFn: async (cancelAtPeriodEnd: boolean) => {
-      return apiRequest('POST', '/api/subscription/cancel', { cancelAtPeriodEnd })
-    },
-    onSuccess: () => {
-      toast({
-        title: "Subscription Updated",
-        description: "Your subscription has been updated successfully.",
-      })
-      queryClient.invalidateQueries({ queryKey: ['/api/subscription'] })
-    },
-    onError: () => {
-      toast({
-        title: "Error",
-        description: "Failed to update subscription. Please try again.",
-        variant: "destructive",
-      })
-    },
-  })
-
-  // Create PhonePe payment
-  const createSubscription = useMutation({
-    mutationFn: async ({ plan }: { plan: string }) => {
-      const response = await apiRequest('POST', '/api/subscription/create', { plan })
-      const data = await response.json()
-      return data
-    },
-    onSuccess: (data) => {
-      // Redirect to PhonePe Checkout
-      if (data.success && data.paymentUrl) {
-        window.location.href = data.paymentUrl
-      } else {
-        toast({
-          title: "Payment Setup Error",
-          description: data.message || "Failed to initialize payment",
-          variant: "destructive",
-        })
-      }
-    },
-    onError: () => {
-      toast({
-        title: "Error",
-        description: "Failed to start payment. Please try again.",
-        variant: "destructive",
-      })
-    },
-  })
-
-  const handleUpgrade = async (plan: string) => {
-    setIsLoading(true)
-    try {
-      await createSubscription.mutateAsync({ plan })
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  const handleCancelSubscription = async () => {
-    if (confirm('Are you sure you want to cancel your subscription? You will continue to have access until the end of your billing period.')) {
-      await cancelSubscription.mutateAsync(true)
-    }
+  const handleUpgrade = (plan: string) => {
+    toast({
+      title: "Upgrade Coming Soon",
+      description: "Payment integration is being updated. Please check back soon.",
+      variant: "default",
+    })
   }
 
   const getPlanFeatures = (plan: string) => {
@@ -150,7 +83,7 @@ export default function Billing() {
     return <div>Please log in to view billing information.</div>
   }
 
-  if (subscriptionLoading || usageLoading) {
+  if (usageLoading) {
     return (
       <div className="container mx-auto px-4 py-8">
         <div className="animate-pulse space-y-4">
@@ -162,7 +95,7 @@ export default function Billing() {
     )
   }
 
-  const currentPlan = subscription?.currentPlan || 'Free'
+  const currentPlan = usageStats?.currentPlan || (user as any)?.plan || 'Free'
   const usagePercentage = usageStats?.applicationLimit !== -1 
     ? Math.round((usageStats?.applicationsThisMonth || 0) / (usageStats?.applicationLimit || 1) * 100)
     : 0
@@ -185,18 +118,6 @@ export default function Billing() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {subscription?.subscriptionStatus && (
-            <div className="mb-4">
-              <p className="text-sm text-muted-foreground">
-                Status: <span className="font-medium">{subscription.subscriptionStatus}</span>
-              </p>
-              {subscription.currentPeriodEnd && (
-                <p className="text-sm text-muted-foreground">
-                  Next billing: {new Date(subscription.currentPeriodEnd).toLocaleDateString()}
-                </p>
-              )}
-            </div>
-          )}
 
           {/* Plan Features */}
           <div className="grid gap-2 mb-4">
@@ -243,22 +164,20 @@ export default function Billing() {
                 </Button>
                 <Button 
                   variant="outline"
-                  onClick={handleCancelSubscription}
-                  disabled={isLoading}
+                  disabled
                   data-testid="button-cancel-subscription"
                 >
-                  Cancel Subscription
+                  Payment Integration Coming Soon
                 </Button>
               </>
             )}
             {currentPlan === 'Pro' && (
               <Button 
                 variant="outline"
-                onClick={handleCancelSubscription}
-                disabled={isLoading}
+                disabled
                 data-testid="button-cancel-subscription"
               >
-                Cancel Subscription
+                Payment Integration Coming Soon
               </Button>
             )}
           </div>
