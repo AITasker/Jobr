@@ -34,8 +34,6 @@ export const users = pgTable("users", {
   lastName: varchar("last_name"),
   profileImageUrl: varchar("profile_image_url"),
   plan: varchar("plan").default("Free").notNull(), // Free, Premium, Pro
-  stripeCustomerId: varchar("stripe_customer_id"),
-  stripeSubscriptionId: varchar("stripe_subscription_id"),
   subscriptionStatus: varchar("subscription_status").default("active"), // active, canceled, past_due, incomplete
   subscriptionCurrentPeriodEnd: timestamp("subscription_current_period_end"),
   applicationsThisMonth: integer("applications_this_month").default(0).notNull(),
@@ -45,32 +43,8 @@ export const users = pgTable("users", {
   lastApiCallReset: timestamp("last_api_call_reset").defaultNow(),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-}, (table) => [
-  index("idx_users_stripe_customer").on(table.stripeCustomerId).where(sql`${table.stripeCustomerId} IS NOT NULL`),
-]);
+});
 
-// Subscriptions table for tracking subscription history and events
-export const subscriptions = pgTable("subscriptions", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-  stripeSubscriptionId: varchar("stripe_subscription_id").unique(),
-  stripePriceId: varchar("stripe_price_id").notNull(),
-  status: varchar("status").notNull(), // active, canceled, incomplete, incomplete_expired, past_due, trialing, unpaid
-  plan: varchar("plan").notNull(), // Free, Premium, Pro
-  currentPeriodStart: timestamp("current_period_start"),
-  currentPeriodEnd: timestamp("current_period_end"),
-  canceledAt: timestamp("canceled_at"),
-  cancelAtPeriodEnd: boolean("cancel_at_period_end").default(false),
-  trialStart: timestamp("trial_start"),
-  trialEnd: timestamp("trial_end"),
-  metadata: jsonb("metadata"), // Store additional Stripe metadata
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
-}, (table) => [
-  index("idx_subscriptions_user_id").on(table.userId),
-  index("idx_subscriptions_stripe_id").on(table.stripeSubscriptionId),
-  index("idx_subscriptions_status").on(table.status),
-]);
 
 // CV data table
 export const cvs = pgTable("cvs", {
@@ -349,22 +323,6 @@ export const otpCodes = pgTable("otp_codes", {
   index("idx_otp_codes_expires_at").on(table.expiresAt),
 ]);
 
-// Stripe events table for webhook idempotency tracking
-export const stripeEvents = pgTable("stripe_events", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  eventId: varchar("event_id").unique().notNull(), // Stripe event ID
-  eventType: varchar("event_type").notNull(), // Event type from Stripe
-  processed: boolean("processed").default(false),
-  processedAt: timestamp("processed_at"),
-  errorMessage: text("error_message"), // Store error if processing failed
-  retryCount: integer("retry_count").default(0),
-  metadata: jsonb("metadata"), // Store event data for debugging
-  createdAt: timestamp("created_at").defaultNow(),
-}, (table) => [
-  index("idx_stripe_events_event_id").on(table.eventId),
-  index("idx_stripe_events_processed").on(table.processed),
-  index("idx_stripe_events_created_at").on(table.createdAt),
-]);
 
 // Payment requests table for idempotency tracking
 export const paymentRequests = pgTable("payment_requests", {
@@ -376,7 +334,7 @@ export const paymentRequests = pgTable("payment_requests", {
   paymentUrl: text("payment_url").notNull(),
   amount: integer("amount").notNull(), // Amount in paise
   status: varchar("status").default("pending").notNull(), // pending, completed, failed, expired
-  provider: varchar("provider").default("phonepe").notNull(), // phonepe, stripe
+  provider: varchar("provider").default("phonepe").notNull(), // phonepe
   metadata: jsonb("metadata"), // Store additional payment data
   expiresAt: timestamp("expires_at").notNull(),
   createdAt: timestamp("created_at").defaultNow(),
@@ -478,7 +436,6 @@ export const usersRelations = relations(users, ({ many, one }) => ({
   applicationAnalytics: many(applicationAnalytics),
   apiUsage: many(apiUsage),
   authAccounts: many(authAccounts),
-  subscriptions: many(subscriptions),
   paymentRequests: many(paymentRequests),
   savedSearches: many(savedSearches),
   searchHistory: many(searchHistory),
@@ -494,12 +451,6 @@ export const paymentRequestsRelations = relations(paymentRequests, ({ one }) => 
   }),
 }));
 
-export const subscriptionsRelations = relations(subscriptions, ({ one }) => ({
-  user: one(users, {
-    fields: [subscriptions.userId],
-    references: [users.id],
-  }),
-}));
 
 export const authAccountsRelations = relations(authAccounts, ({ one }) => ({
   user: one(users, {
@@ -663,8 +614,6 @@ export const insertApiUsageSchema = createInsertSchema(apiUsage).omit({ id: true
 export const insertTemplateSchema = createInsertSchema(templates).omit({ id: true, createdAt: true });
 export const insertAuthAccountSchema = createInsertSchema(authAccounts).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertOtpCodeSchema = createInsertSchema(otpCodes).omit({ id: true, createdAt: true });
-export const insertStripeEventSchema = createInsertSchema(stripeEvents).omit({ id: true, createdAt: true });
-export const insertSubscriptionSchema = createInsertSchema(subscriptions).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertPaymentRequestSchema = createInsertSchema(paymentRequests).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertSavedSearchSchema = createInsertSchema(savedSearches).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertSearchHistorySchema = createInsertSchema(searchHistory).omit({ id: true, createdAt: true });
@@ -774,10 +723,6 @@ export type InsertAuthAccount = z.infer<typeof insertAuthAccountSchema>;
 export type AuthAccount = typeof authAccounts.$inferSelect;
 export type InsertOtpCode = z.infer<typeof insertOtpCodeSchema>;
 export type OtpCode = typeof otpCodes.$inferSelect;
-export type InsertStripeEvent = z.infer<typeof insertStripeEventSchema>;
-export type StripeEvent = typeof stripeEvents.$inferSelect;
-export type InsertSubscription = z.infer<typeof insertSubscriptionSchema>;
-export type Subscription = typeof subscriptions.$inferSelect;
 export type InsertPaymentRequest = z.infer<typeof insertPaymentRequestSchema>;
 export type PaymentRequest = typeof paymentRequests.$inferSelect;
 export type RegisterData = z.infer<typeof registerSchema>;
