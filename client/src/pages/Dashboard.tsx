@@ -79,26 +79,12 @@ interface ApplicationWithJob extends DatabaseApplication {
 }
 
 export default function Dashboard() {
+  // ALL HOOKS MUST BE CALLED FIRST - NO CONDITIONAL LOGIC BEFORE HOOKS
   const { user, isAuthenticated, isLoading } = useAuth()
   const { toast } = useToast()
   const [, setLocation] = useLocation()
-
-  // Show loading spinner while checking authentication
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-      </div>
-    );
-  }
-
-  // Redirect to landing page if not authenticated
-  if (!isAuthenticated) {
-    setLocation('/');
-    return null;
-  }
   
-  // Search and filter state
+  // Search and filter state - moved to top to avoid hooks violation
   const [searchQuery, setSearchQuery] = useState('')
   const [locationFilter, setLocationFilter] = useState('')
   const [typeFilter, setTypeFilter] = useState('')
@@ -107,7 +93,7 @@ export default function Dashboard() {
   const [selectedApplication, setSelectedApplication] = useState<ApplicationWithJob | null>(null)
   const [isEditApplicationModalOpen, setIsEditApplicationModalOpen] = useState(false)
 
-  // Check if user has a CV uploaded with proper type checking
+  // All queries must be called before any conditional logic
   const { data: cvData, isLoading: cvLoading, error: cvError } = useQuery<CVResponse | null>({
     queryKey: ['/api/cv'],
     enabled: isAuthenticated,
@@ -117,7 +103,7 @@ export default function Dashboard() {
   // Helper function to validate CV data - defined immediately after cvData query
   const cvOk = (cv: CVResponse | null): boolean => !!(cv && typeof cv.id === 'string' && cv.id.length && cv.userId && cv.fileName)
 
-  // Enhanced CV validation with proper type checking - moved above useQuery usage to fix TDZ
+  // Enhanced CV validation with proper type checking
   const hasCvData = cvOk(cvData)
 
   // Get matched jobs with proper CV validation
@@ -141,13 +127,42 @@ export default function Dashboard() {
     retry: false
   })
 
+  // NOW SAFE TO ADD CONDITIONAL LOGIC AFTER ALL HOOKS ARE CALLED
+  // Show loading spinner while checking authentication
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
+
+  // Redirect to landing page if not authenticated
+  if (!isAuthenticated) {
+    setLocation('/');
+    return null;
+  }
+
 
   const handleCVUpload = () => {
     // Invalidate the CV query to refetch the updated CV data
     queryClient.invalidateQueries({ queryKey: ['/api/cv'] })
+    // Also invalidate job matches since we have new CV data
+    queryClient.invalidateQueries({ queryKey: ['/api/jobs/matched'] })
     toast({
       title: "CV Processed Successfully!",
       description: "Your CV has been analyzed and you can now view matched jobs.",
+    })
+  }
+
+  const handleJobMatchingTrigger = () => {
+    // Switch to jobs tab and trigger job matching
+    setActiveTab('jobs')
+    // Invalidate matched jobs to fetch fresh results
+    queryClient.invalidateQueries({ queryKey: ['/api/jobs/matched'] })
+    toast({
+      title: "Finding Your Perfect Matches!",
+      description: "Our AI is analyzing your CV against thousands of job opportunities.",
     })
   }
 
@@ -176,7 +191,10 @@ export default function Dashboard() {
                 Let's get started by uploading your CV. Our AI will analyze it to find perfect job matches.
               </p>
             </div>
-            <CVUpload onUploadComplete={handleCVUpload} />
+            <CVUpload 
+              onUploadComplete={handleCVUpload} 
+              onJobMatchingTrigger={handleJobMatchingTrigger}
+            />
           </div>
         </main>
       </div>

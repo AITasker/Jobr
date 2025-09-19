@@ -9,6 +9,9 @@ import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./replitAuth";
 import { FileProcessor } from "./fileProcessor";
 import { OpenAIService } from "./openaiService";
+import OpenAI from "openai";
+
+const openai = process.env.OPENAI_API_KEY ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null;
 import { JobMatchingService } from "./jobMatchingService";
 import { ApplicationPreparationService } from "./applicationPreparationService";
 import { AuthService } from "./authService";
@@ -613,6 +616,228 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching CV:", error);
       res.status(500).json({ message: "Failed to fetch CV" });
+    }
+  });
+
+  // AI CV Analysis endpoint - provides detailed analysis and recommendations
+  app.post('/api/cv/analyze', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const cv = await storage.getCvByUserId(userId);
+      
+      if (!cv || !cv.parsedData) {
+        return res.status(400).json(createErrorResponse(
+          "Please upload your CV before requesting analysis",
+          ERROR_CODES.CV_REQUIRED
+        ));
+      }
+
+      // Perform AI analysis if available
+      let analysis;
+      let recommendations = [];
+      let processingMethod = 'basic';
+
+      if (OpenAIService.isAvailable()) {
+        try {
+          // Generate comprehensive CV analysis using AI
+          const analysisPrompt = `
+            Analyze this CV data and provide detailed feedback and recommendations:
+            
+            Skills: ${cv.parsedData.skills?.join(', ') || 'Not specified'}
+            Experience: ${cv.parsedData.experience || 'Not specified'}
+            Education: ${cv.parsedData.education || 'Not specified'}
+            
+            Provide analysis in JSON format with:
+            - skillsAnalysis: categorize skills and rate proficiency levels
+            - experienceAnalysis: evaluate experience relevance and level
+            - strengthsAndWeaknesses: identify key strengths and areas for improvement
+            - recommendations: specific suggestions for CV improvement
+            - completenessScore: overall CV completeness (0-100)
+            - industryFit: likely industry matches based on profile
+          `;
+
+          // Use OpenAI for analysis instead of parsing
+          const response = await openai!.chat.completions.create({
+            model: "gpt-5",
+            messages: [
+              { role: "system", content: "You are an expert CV analyst. Provide detailed analysis in JSON format." },
+              { role: "user", content: analysisPrompt }
+            ],
+            response_format: { type: "json_object" },
+            temperature: 0.3,
+            max_tokens: 800
+          });
+
+          const content = response.choices[0]?.message?.content;
+          if (content) {
+            analysis = JSON.parse(content);
+            processingMethod = 'ai';
+          }
+
+          // Generate specific recommendations
+          recommendations = [
+            'Consider adding quantified achievements to strengthen your experience section',
+            'Add relevant technical skills based on your target roles',
+            'Include certifications or training to validate your expertise',
+            'Optimize keywords for better job matching'
+          ];
+
+        } catch (aiError) {
+          console.warn('AI analysis failed, providing basic analysis:', aiError);
+          processingMethod = 'basic_fallback';
+        }
+      }
+
+      // Basic analysis fallback
+      if (!analysis) {
+        const skillCount = cv.parsedData.skills?.length || 0;
+        const hasExperience = cv.parsedData.experience && cv.parsedData.experience.length > 50;
+        const hasEducation = cv.parsedData.education && cv.parsedData.education.length > 20;
+        
+        analysis = {
+          skillsAnalysis: {
+            totalSkills: skillCount,
+            categories: skillCount > 0 ? ['Technical', 'Professional'] : [],
+            recommendations: skillCount < 5 ? ['Add more relevant skills'] : ['Skills section looks good']
+          },
+          experienceAnalysis: {
+            hasRelevantExperience: hasExperience,
+            level: hasExperience ? 'Professional' : 'Entry-level',
+            recommendations: hasExperience ? [] : ['Add more detailed work experience']
+          },
+          completenessScore: Math.min(100, (skillCount * 10) + (hasExperience ? 40 : 0) + (hasEducation ? 30 : 0)),
+          strengthsAndWeaknesses: {
+            strengths: [],
+            weaknesses: []
+          }
+        };
+
+        recommendations = [
+          skillCount < 5 && 'Consider adding more relevant skills to improve job matching',
+          !hasExperience && 'Add detailed work experience with achievements',
+          !hasEducation && 'Include educational background',
+          'Review CV formatting and ensure all sections are complete'
+        ].filter(Boolean);
+      }
+
+      res.json({
+        success: true,
+        analysis,
+        recommendations,
+        processingMethod,
+        cvData: {
+          skills: cv.parsedData.skills || [],
+          experience: cv.parsedData.experience || 'Not specified',
+          education: cv.parsedData.education || 'Not specified',
+          name: cv.parsedData.name || null,
+          email: cv.parsedData.email || null,
+          location: cv.parsedData.location || null
+        },
+        metrics: {
+          skillsCount: cv.parsedData.skills?.length || 0,
+          completeness: analysis.completenessScore || 0
+        }
+      });
+
+    } catch (error) {
+      console.error("Error analyzing CV:", error);
+      res.status(500).json(createErrorResponse(
+        "Failed to analyze CV",
+        ERROR_CODES.INTERNAL_ERROR,
+        { details: error instanceof Error ? error.message : 'Unknown error' }
+      ));
+    }
+  });
+
+  // AI Personalization endpoint - provides personalized recommendations
+  app.post('/api/ai/personalize', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const cv = await storage.getCvByUserId(userId);
+      const { preferences, targetRole, targetIndustry } = req.body;
+      
+      if (!cv || !cv.parsedData) {
+        return res.status(400).json(createErrorResponse(
+          "Please upload your CV before requesting personalized recommendations",
+          ERROR_CODES.CV_REQUIRED
+        ));
+      }
+
+      let personalizedRecommendations;
+      let processingMethod = 'basic';
+
+      if (OpenAIService.isAvailable() && targetRole) {
+        try {
+          // Generate personalized recommendations based on target role
+          const personalizationPrompt = `
+            Based on this CV profile, provide personalized recommendations for targeting: ${targetRole}
+            ${targetIndustry ? `in the ${targetIndustry} industry` : ''}
+            
+            Current Profile:
+            - Skills: ${cv.parsedData.skills?.join(', ') || 'Not specified'}
+            - Experience: ${cv.parsedData.experience || 'Not specified'}
+            - Education: ${cv.parsedData.education || 'Not specified'}
+            
+            User Preferences: ${JSON.stringify(preferences || {})}
+            
+            Provide specific, actionable recommendations in JSON format:
+            - skillGaps: skills to develop for the target role
+            - experienceGaps: experience areas to focus on
+            - learningPath: suggested courses or certifications
+            - networkingTips: industry-specific networking advice
+            - jobSearchStrategy: tailored job search recommendations
+          `;
+
+          // Use OpenAI for personalization
+          const response = await openai!.chat.completions.create({
+            model: "gpt-5", 
+            messages: [
+              { role: "system", content: "You are a career advisor. Provide personalized recommendations in JSON format." },
+              { role: "user", content: personalizationPrompt }
+            ],
+            response_format: { type: "json_object" },
+            temperature: 0.3,
+            max_tokens: 800
+          });
+
+          const content = response.choices[0]?.message?.content;
+          if (content) {
+            personalizedRecommendations = JSON.parse(content);
+            processingMethod = 'ai';
+          }
+
+        } catch (aiError) {
+          console.warn('AI personalization failed, providing basic recommendations:', aiError);
+        }
+      }
+
+      // Basic personalization fallback
+      if (!personalizedRecommendations) {
+        personalizedRecommendations = {
+          skillGaps: ['Industry-specific technical skills', 'Leadership and communication skills'],
+          experienceGaps: ['Project management experience', 'Team collaboration'],
+          learningPath: ['Consider online courses in your field', 'Professional certifications'],
+          networkingTips: ['Join professional associations', 'Attend industry events'],
+          jobSearchStrategy: ['Tailor CV for each application', 'Use industry keywords']
+        };
+      }
+
+      res.json({
+        success: true,
+        personalizedRecommendations,
+        targetRole: targetRole || 'General',
+        targetIndustry: targetIndustry || 'General',
+        processingMethod,
+        timestamp: new Date().toISOString()
+      });
+
+    } catch (error) {
+      console.error("Error generating personalized recommendations:", error);
+      res.status(500).json(createErrorResponse(
+        "Failed to generate personalized recommendations",
+        ERROR_CODES.INTERNAL_ERROR,
+        { details: error instanceof Error ? error.message : 'Unknown error' }
+      ));
     }
   });
 
