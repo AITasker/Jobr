@@ -2,11 +2,13 @@ import { useState } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
-import { Upload, FileText, CheckCircle, AlertCircle } from 'lucide-react'
+import { Upload, FileText, CheckCircle, AlertCircle, Target } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
+import { CVAnalysisDisplay } from '@/components/CVAnalysisDisplay'
 
 interface CVUploadProps {
   onUploadComplete?: (cvData: any) => void
+  onJobMatchingTrigger?: () => void
 }
 
 interface UploadResponse {
@@ -17,12 +19,14 @@ interface UploadResponse {
   message: string
 }
 
-export function CVUpload({ onUploadComplete }: CVUploadProps) {
+export function CVUpload({ onUploadComplete, onJobMatchingTrigger }: CVUploadProps) {
   const [uploadStatus, setUploadStatus] = useState<'idle' | 'uploading' | 'processing' | 'completed' | 'error'>('idle')
   const [progress, setProgress] = useState(0)
   const [fileName, setFileName] = useState('')
   const [errorMessage, setErrorMessage] = useState('')
   const [processingMethod, setProcessingMethod] = useState<'openai' | 'fallback' | null>(null)
+  const [cvData, setCvData] = useState<any>(null)
+  const [showAnalysis, setShowAnalysis] = useState(false)
   const { toast } = useToast()
 
   const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -104,6 +108,12 @@ export function CVUpload({ onUploadComplete }: CVUploadProps) {
           })
         }
         
+        // Store CV data for analysis display
+        if (result.parsedData) {
+          setCvData(result.parsedData)
+          setShowAnalysis(true)
+        }
+        
         // Call completion handler with parsed data
         if (onUploadComplete && result.parsedData) {
           onUploadComplete(result.parsedData)
@@ -129,11 +139,19 @@ export function CVUpload({ onUploadComplete }: CVUploadProps) {
     setFileName('')
     setErrorMessage('')
     setProcessingMethod(null)
+    setCvData(null)
+    setShowAnalysis(false)
     
     // Reset file input
     const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement
     if (fileInput) {
       fileInput.value = ''
+    }
+  }
+
+  const handleTriggerJobMatching = () => {
+    if (onJobMatchingTrigger) {
+      onJobMatchingTrigger()
     }
   }
 
@@ -200,6 +218,17 @@ export function CVUpload({ onUploadComplete }: CVUploadProps) {
     )
   }
 
+  // Show analysis display if CV has been uploaded and analyzed
+  if (showAnalysis && cvData && uploadStatus === 'completed') {
+    return (
+      <CVAnalysisDisplay 
+        cvData={cvData}
+        onTriggerJobMatching={handleTriggerJobMatching}
+        onReUpload={handleReUpload}
+      />
+    )
+  }
+
   return (
     <Card>
       <CardContent className="flex flex-col items-center justify-center py-12 text-center">
@@ -218,28 +247,64 @@ export function CVUpload({ onUploadComplete }: CVUploadProps) {
           <div className="w-full max-w-xs mb-4">
             <Progress value={progress} className="h-2" data-testid="upload-progress" />
             <p className="text-xs text-muted-foreground mt-2">{progress}% complete</p>
+            
+            {uploadStatus === 'processing' && (
+              <div className="mt-4 space-y-2">
+                <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
+                  <div className="animate-pulse w-2 h-2 bg-primary rounded-full"></div>
+                  AI is extracting your skills and experience
+                </div>
+                <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
+                  <div className="animate-pulse w-2 h-2 bg-primary rounded-full animation-delay-200"></div>
+                  Preparing personalized job recommendations
+                </div>
+              </div>
+            )}
           </div>
         )}
 
-        {uploadStatus === 'completed' && (
-          <div className="space-y-3">
+        {uploadStatus === 'completed' && !showAnalysis && (
+          <div className="space-y-4">
             <div className="text-sm text-muted-foreground space-y-2">
               {processingMethod === 'openai' ? (
-                <p>Your CV has been analyzed with AI and is ready for job matching!</p>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-center gap-2 text-green-600 dark:text-green-400">
+                    <CheckCircle className="h-4 w-4" />
+                    <p>CV analyzed with AI successfully!</p>
+                  </div>
+                  <p>Your CV has been processed and job matching is ready.</p>
+                </div>
               ) : processingMethod === 'fallback' ? (
-                <div>
-                  <p>Your CV has been processed with basic parsing.</p>
-                  <p className="text-xs text-yellow-600 dark:text-yellow-500">
-                    AI analysis is currently unavailable, but you can still use the platform.
+                <div className="space-y-2">
+                  <div className="flex items-center justify-center gap-2 text-yellow-600 dark:text-yellow-400">
+                    <AlertCircle className="h-4 w-4" />
+                    <p>CV processed with basic parsing</p>
+                  </div>
+                  <p className="text-xs">
+                    AI analysis is currently unavailable, but job matching is still available.
                   </p>
                 </div>
               ) : (
                 <p>Your CV has been processed and is ready for job matching!</p>
               )}
             </div>
-            <Button variant="outline" onClick={handleReUpload} data-testid="button-upload-new-cv">
-              Upload New CV
-            </Button>
+            <div className="flex gap-2 justify-center">
+              <Button
+                onClick={() => setShowAnalysis(true)}
+                className="flex items-center gap-2"
+                data-testid="button-view-analysis"
+              >
+                <Target className="h-4 w-4" />
+                View Analysis & Find Jobs
+              </Button>
+              <Button 
+                variant="outline" 
+                onClick={handleReUpload} 
+                data-testid="button-upload-new-cv"
+              >
+                Upload New CV
+              </Button>
+            </div>
           </div>
         )}
 
