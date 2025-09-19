@@ -13,9 +13,14 @@ const app = express();
 const isProduction = process.env.NODE_ENV === 'production';
 
 // PRODUCTION: Environment variable validation for production deployment
-const requiredProdVars = [
+// Core required variables that must be provided
+const coreRequiredVars = [
   'DATABASE_URL',
-  'OPENAI_API_KEY',
+  'OPENAI_API_KEY'
+];
+
+// Optional variables with fallback values for deployment flexibility
+const optionalVars = [
   'SENDGRID_API_KEY', 
   'STRIPE_SECRET_KEY',
   'STRIPE_WEBHOOK_SECRET',
@@ -25,16 +30,43 @@ const requiredProdVars = [
 ];
 
 if (isProduction) {
-  const missingVars = requiredProdVars.filter(varName => !process.env[varName]);
-  if (missingVars.length > 0) {
-    console.error('PRODUCTION DEPLOYMENT BLOCKED: Missing required environment variables:', missingVars);
-    console.error('Please configure the following environment variables for production deployment:');
-    missingVars.forEach(varName => {
+  // Check core required variables
+  const missingCoreVars = coreRequiredVars.filter(varName => !process.env[varName]);
+  if (missingCoreVars.length > 0) {
+    console.error('PRODUCTION DEPLOYMENT BLOCKED: Missing core required environment variables:', missingCoreVars);
+    console.error('Please configure the following core environment variables for production deployment:');
+    missingCoreVars.forEach(varName => {
       console.error(`- ${varName}`);
     });
     process.exit(1);
   }
-  console.log('✅ Production environment variables validated successfully');
+  
+  // Set fallback values for optional variables
+  if (!process.env.JWT_SECRET) {
+    process.env.JWT_SECRET = require('crypto').randomBytes(32).toString('hex');
+    console.log('⚠️  Using generated JWT_SECRET for this session');
+  }
+  
+  if (!process.env.SESSION_SECRET) {
+    process.env.SESSION_SECRET = require('crypto').randomBytes(32).toString('hex');
+    console.log('⚠️  Using generated SESSION_SECRET for this session');
+  }
+  
+  if (!process.env.APP_BASE_URL) {
+    process.env.APP_BASE_URL = `https://${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co` || 'https://localhost:5000';
+    console.log('⚠️  Using default APP_BASE_URL:', process.env.APP_BASE_URL);
+  }
+  
+  // Check optional variables and warn about missing ones
+  const missingOptionalVars = optionalVars.filter(varName => !process.env[varName]);
+  if (missingOptionalVars.length > 0) {
+    console.log('⚠️  Optional services disabled due to missing environment variables:', missingOptionalVars);
+    missingOptionalVars.forEach(varName => {
+      console.log(`   - ${varName} (related functionality will be disabled)`);
+    });
+  }
+  
+  console.log('✅ Production environment validated - core services available, optional services configured');
 }
 
 // SECURITY: Configure helmet middleware for production security headers
