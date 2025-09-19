@@ -24,6 +24,17 @@ const getOidcConfig = memoize(
 
 export function getSession() {
   const sessionTtl = 7 * 24 * 60 * 60 * 1000; // 1 week
+  
+  // SECURITY: Validate SESSION_SECRET exists and meets minimum security requirements
+  if (!process.env.SESSION_SECRET) {
+    throw new Error("SESSION_SECRET environment variable is required for session security");
+  }
+  
+  // SECURITY: Validate SESSION_SECRET strength for production
+  if (process.env.NODE_ENV === 'production' && process.env.SESSION_SECRET.length < 32) {
+    throw new Error("SESSION_SECRET must be at least 32 characters for production security");
+  }
+  
   const pgStore = connectPg(session);
   const sessionStore = new pgStore({
     conString: process.env.DATABASE_URL,
@@ -32,7 +43,7 @@ export function getSession() {
     tableName: "sessions",
   });
   return session({
-    secret: process.env.SESSION_SECRET || 'dev-session-secret-change-in-production',
+    secret: process.env.SESSION_SECRET,
     store: sessionStore,
     resave: false,
     saveUninitialized: false,
@@ -172,7 +183,7 @@ export const isAuthenticated: RequestHandler = async (req: any, res, next) => {
       AuthLogger.logAuthEvent({
         userId: jwtPayload?.userId,
         email: jwtPayload?.email,
-        method: 'jwt',
+        method: 'replit',
         action: 'refresh',
         success: false,
         errorCode: 'JWT_AUTH_ERROR',
