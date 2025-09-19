@@ -62,7 +62,7 @@ export function UpgradePrompt({
             className="flex-1"
             data-testid="button-upgrade-prompt"
           >
-            Upgrade to Premium ($19/month)
+            Upgrade to Premium (₹499/month)
           </Button>
           <Button 
             variant="outline"
@@ -70,7 +70,7 @@ export function UpgradePrompt({
             className="flex-1"
             data-testid="button-upgrade-pro-prompt"
           >
-            Go Pro ($49/month)
+            Go Pro (₹999/month)
           </Button>
         </div>
 
