@@ -29,7 +29,7 @@ import {
   User,
   Zap,
   BarChart3,
-  Timeline as TimelineIcon,
+  Activity as TimelineIcon,
   Send,
   Calendar as CalendarIcon,
   Target,
@@ -53,38 +53,47 @@ export function ApplicationDetailsModal({
   // Fetch application details
   const { data: application, isLoading: applicationLoading } = useQuery({
     queryKey: ['application', applicationId],
-    queryFn: () => apiRequest(`/api/applications/${applicationId}`),
+    queryFn: async () => {
+      const response = await apiRequest('GET', `/api/applications/${applicationId}`);
+      return await response.json();
+    },
     enabled: isOpen && !!applicationId
   })
 
   // Fetch application timeline
   const { data: timeline, isLoading: timelineLoading } = useQuery({
     queryKey: ['application-timeline', applicationId],
-    queryFn: () => apiRequest(`/api/applications/${applicationId}/timeline`),
+    queryFn: async () => {
+      const response = await apiRequest('GET', `/api/applications/${applicationId}/timeline`);
+      return await response.json();
+    },
     enabled: isOpen && !!applicationId
   })
 
   // Fetch application insights
   const { data: insights, isLoading: insightsLoading } = useQuery({
     queryKey: ['application-insights', applicationId],
-    queryFn: () => apiRequest(`/api/applications/${applicationId}/insights`),
+    queryFn: async () => {
+      const response = await apiRequest('GET', `/api/applications/${applicationId}/insights`);
+      return await response.json();
+    },
     enabled: isOpen && !!applicationId
   })
 
   // Fetch email analytics
   const { data: emailAnalytics, isLoading: emailLoading } = useQuery({
     queryKey: ['application-email-analytics', applicationId],
-    queryFn: () => apiRequest(`/api/applications/${applicationId}/email/analytics`),
+    queryFn: async () => {
+      const response = await apiRequest('GET', `/api/applications/${applicationId}/email/analytics`);
+      return await response.json();
+    },
     enabled: isOpen && !!applicationId
   })
 
   // Status update mutation
   const updateStatusMutation = useMutation({
     mutationFn: ({ newStatus, reason }: { newStatus: string; reason?: string }) => 
-      apiRequest(`/api/applications/${applicationId}/status`, {
-        method: 'PUT',
-        body: { newStatus, reason }
-      }),
+      apiRequest('PUT', `/api/applications/${applicationId}/status`, { newStatus, reason }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['application', applicationId] })
       queryClient.invalidateQueries({ queryKey: ['applications'] })
@@ -101,10 +110,7 @@ export function ApplicationDetailsModal({
       interviewDate: string; 
       interviewType: string 
     }) => 
-      apiRequest(`/api/applications/${applicationId}/interview`, {
-        method: 'POST',
-        body: { interviewDate, interviewType }
-      }),
+      apiRequest('POST', `/api/applications/${applicationId}/interview`, { interviewDate, interviewType }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['application', applicationId] })
       toast({

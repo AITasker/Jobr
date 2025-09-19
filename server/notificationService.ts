@@ -91,13 +91,30 @@ export class NotificationService {
         // Create default preferences
         await storage.createUserPreferences({
           userId,
-          preferences: defaultPreferences,
-          isActive: true
         });
         return defaultPreferences;
       }
 
-      return userPrefs.preferences as NotificationPreferences || defaultPreferences;
+      // Map database preferences to notification preferences
+      return {
+        email: {
+          statusChanges: true,
+          interviews: true,
+          followUps: true,
+          reminders: true
+        },
+        push: {
+          statusChanges: true,
+          interviews: true,
+          followUps: false,
+          urgent: true
+        },
+        timing: {
+          quietHours: { start: '22:00', end: '08:00' },
+          timezone: 'America/New_York',
+          frequency: 'immediate'
+        }
+      };
     } catch (error) {
       console.error('NotificationService: Failed to initialize user preferences:', error);
       return defaultPreferences;
@@ -116,7 +133,6 @@ export class NotificationService {
       const updatedPrefs = { ...currentPrefs, ...preferences };
 
       await storage.updateUserPreferences(userId, {
-        preferences: updatedPrefs,
         updatedAt: new Date()
       });
 
@@ -588,7 +604,7 @@ export class NotificationService {
     userId: string,
     notification: NotificationPayload
   ): Promise<void> {
-    const user = await storage.getUserById(userId);
+    const user = await storage.getUser(userId);
     if (!user?.email) return;
 
     const htmlContent = this.generateNotificationEmailHTML(notification);

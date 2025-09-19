@@ -47,7 +47,7 @@ import {
   CheckCircle,
   XCircle,
   Calendar as CalendarIcon,
-  Timeline,
+  Activity,
   BarChart3,
   Send
 } from 'lucide-react'
@@ -138,19 +138,28 @@ export function EnhancedApplicationTracker({ onViewDetails, onEditApplication }:
   // Fetch applications with enhanced data
   const { data: applications = [], isLoading, error } = useQuery({
     queryKey: ['applications'],
-    queryFn: () => apiRequest('/api/applications')
+    queryFn: async () => {
+      const response = await apiRequest('GET', '/api/applications');
+      return await response.json();
+    }
   })
 
   // Fetch comprehensive analytics
   const { data: analytics } = useQuery({
     queryKey: ['applications-analytics'],
-    queryFn: () => apiRequest('/api/applications/analytics')
+    queryFn: async () => {
+      const response = await apiRequest('GET', '/api/applications/analytics');
+      return await response.json();
+    }
   })
 
   // Fetch user notifications
   const { data: notifications } = useQuery({
     queryKey: ['notifications'],
-    queryFn: () => apiRequest('/api/notifications?limit=5')
+    queryFn: async () => {
+      const response = await apiRequest('GET', '/api/notifications?limit=5');
+      return await response.json();
+    }
   })
 
   // Mutation for updating application status
@@ -160,10 +169,7 @@ export function EnhancedApplicationTracker({ onViewDetails, onEditApplication }:
       newStatus: string; 
       reason?: string 
     }) => 
-      apiRequest(`/api/applications/${applicationId}/status`, {
-        method: 'PUT',
-        body: { newStatus, reason }
-      }),
+      apiRequest('PUT', `/api/applications/${applicationId}/status`, { newStatus, reason }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['applications'] })
       queryClient.invalidateQueries({ queryKey: ['applications-analytics'] })
@@ -188,10 +194,7 @@ export function EnhancedApplicationTracker({ onViewDetails, onEditApplication }:
       updates: any; 
       reason: string 
     }) => 
-      apiRequest('/api/applications/bulk-update', {
-        method: 'POST',
-        body: { applicationIds, updates, reason }
-      }),
+      apiRequest('POST', '/api/applications/bulk-update', { applicationIds, updates, reason }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['applications'] })
       setSelectedApplications([])
@@ -293,13 +296,13 @@ export function EnhancedApplicationTracker({ onViewDetails, onEditApplication }:
 
   const getEmailStatusIcon = (app: Application) => {
     if (app.emailRepliedAt) {
-      return <MailCheck className="h-4 w-4 text-green-600" title="Email replied" />
+      return <MailCheck className="h-4 w-4 text-green-600" />
     } else if (app.emailOpened) {
-      return <MailOpen className="h-4 w-4 text-blue-600" title="Email opened" />
+      return <MailOpen className="h-4 w-4 text-blue-600" />
     } else if (app.emailSentAt) {
-      return <Mail className="h-4 w-4 text-gray-600" title="Email sent" />
+      return <Mail className="h-4 w-4 text-gray-600" />
     } else {
-      return <MailX className="h-4 w-4 text-gray-400" title="No email sent" />
+      return <MailX className="h-4 w-4 text-gray-400" />
     }
   }
 
@@ -646,7 +649,7 @@ export function EnhancedApplicationTracker({ onViewDetails, onEditApplication }:
                             <DropdownMenuLabel>Quick Actions</DropdownMenuLabel>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem onClick={() => handleViewDetails(app.id)}>
-                              <Timeline className="h-4 w-4 mr-2" />
+                              <Activity className="h-4 w-4 mr-2" />
                               View Timeline
                             </DropdownMenuItem>
                             <DropdownMenuItem onClick={() => handleViewDetails(app.id)}>

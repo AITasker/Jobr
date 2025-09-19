@@ -26,20 +26,29 @@ export function ApplicationStatsCard({ className, onViewAnalytics }: Application
   // Fetch comprehensive analytics
   const { data: analytics, isLoading } = useQuery({
     queryKey: ['comprehensive-analytics'],
-    queryFn: () => apiRequest('/api/analytics/insights'),
+    queryFn: async () => {
+      const response = await apiRequest('GET', '/api/analytics/insights');
+      return await response.json();
+    },
     refetchInterval: 30000 // Refresh every 30 seconds
   })
 
   // Fetch success rates
   const { data: successRates } = useQuery({
     queryKey: ['success-rates'],
-    queryFn: () => apiRequest('/api/analytics/success-rates')
+    queryFn: async () => {
+      const response = await apiRequest('GET', '/api/analytics/success-rates');
+      return await response.json();
+    }
   })
 
   // Fetch email analytics
   const { data: emailAnalytics } = useQuery({
     queryKey: ['email-analytics'],
-    queryFn: () => apiRequest('/api/user/email/analytics')
+    queryFn: async () => {
+      const response = await apiRequest('GET', '/api/user/email/analytics');
+      return await response.json();
+    }
   })
 
   if (isLoading) {

@@ -442,6 +442,7 @@ export const userPreferences = pgTable("user_preferences", {
   industries: text("industries").array(),
   companySize: varchar("company_size"), // startup, small, medium, large, enterprise
   benefits: text("benefits").array(), // health_insurance, flexible_hours, etc.
+  preferences: jsonb("preferences"), // Notification and application preferences as JSON
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => [

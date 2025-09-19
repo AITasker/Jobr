@@ -132,10 +132,10 @@ export class AnalyticsService {
       const statusBreakdown = this.calculateStatusBreakdown(applications);
 
       // Calculate success metrics
-      const successMetrics = await this.calculateSuccessRateAnalytics(applications);
+      const successMetrics = this.calculateSuccessRateAnalytics(applications);
 
       // Calculate response time metrics
-      const responseTimeMetrics = await this.calculateResponseTimeAnalytics(applications);
+      const responseTimeMetrics = this.calculateResponseTimeAnalytics(applications);
 
       // Calculate engagement metrics
       const engagementMetrics = await this.calculateEngagementMetrics(applications);
@@ -593,7 +593,7 @@ export class AnalyticsService {
     startDate: Date,
     endDate: Date
   ): Promise<Application[]> {
-    const allApplications = await storage.getApplicationsByUserId(userId);
+    const allApplications = await storage.getApplicationsWithJobsByUserId(userId);
     return allApplications.filter(app => {
       const appliedDate = new Date(app.appliedDate);
       return appliedDate >= startDate && appliedDate <= endDate;
@@ -900,7 +900,7 @@ export class AnalyticsService {
     // This would implement complex filtering logic
     // For now, return basic filtered results
     if (userId) {
-      return await storage.getApplicationsByUserId(userId);
+      return await storage.getApplicationsWithJobsByUserId(userId);
     }
     return []; // Would implement global filtering in production
   }
@@ -1053,5 +1053,47 @@ export class AnalyticsService {
     suggestions.push('Consider negotiating salaries to increase actual returns');
 
     return suggestions;
+  }
+
+  /**
+   * Calculate success rate analytics for applications
+   */
+  private static calculateSuccessRateAnalytics(applications: Application[]): SuccessRateAnalytics {
+    const totalApplications = applications.length;
+    const successfulApplications = applications.filter(app => 
+      ['offered', 'accepted'].includes(app.status)
+    ).length;
+    
+    const successRate = totalApplications > 0 ? (successfulApplications / totalApplications) * 100 : 0;
+    
+    return {
+      overall: {
+        totalApplications,
+        successfulApplications,
+        successRate,
+        averageTimeToOffer: 0 // Simplified for now
+      },
+      byIndustry: [],
+      byJobLevel: [],
+      timeSeriesData: []
+    };
+  }
+
+  /**
+   * Calculate response time analytics for applications
+   */
+  private static calculateResponseTimeAnalytics(applications: Application[]): ResponseTimeAnalytics {
+    return {
+      average: 0,
+      median: 0,
+      percentiles: {
+        p25: 0,
+        p50: 0,
+        p75: 0,
+        p90: 0
+      },
+      byCompanySize: [],
+      byIndustry: []
+    };
   }
 }

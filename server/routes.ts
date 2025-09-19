@@ -5,6 +5,7 @@ import multer from "multer";
 import rateLimit from "express-rate-limit";
 import passport from "passport";
 import { Strategy as GoogleStrategy } from "passport-google-oauth20";
+import crypto from "crypto";
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./replitAuth";
 import { FileProcessor } from "./fileProcessor";
@@ -2087,6 +2088,97 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const { AnalyticsService } = require('./analyticsService');
 
   // =======================================
+  // SENDGRID WEBHOOK SECURITY MIDDLEWARE
+  // =======================================
+
+  /**
+   * Verify SendGrid webhook signature to prevent forged events
+   */
+  const verifyWebhookSignature = (req: any, res: any, next: any) => {
+    const signature = req.headers['x-eventwebhook-signature'];
+    const timestamp = req.headers['x-eventwebhook-timestamp'];
+    const body = req.body;
+    
+    // Get webhook secret from environment
+    const webhookSecret = process.env.SENDGRID_WEBHOOK_SECRET;
+    
+    if (!webhookSecret) {
+      console.error('SendGrid webhook signature verification failed: SENDGRID_WEBHOOK_SECRET not configured');
+      return res.status(500).json({
+        success: false,
+        message: 'Webhook signature verification not configured'
+      });
+    }
+
+    if (!signature || !timestamp) {
+      console.warn('SendGrid webhook signature verification failed: Missing signature or timestamp headers');
+      return res.status(401).json({
+        success: false,
+        message: 'Missing required webhook headers'
+      });
+    }
+
+    try {
+      // Parse the signature header
+      const signatureObj = JSON.parse(signature);
+      const providedSignature = signatureObj.v1;
+      
+      if (!providedSignature) {
+        console.warn('SendGrid webhook signature verification failed: Invalid signature format');
+        return res.status(401).json({
+          success: false,
+          message: 'Invalid signature format'
+        });
+      }
+
+      // Create verification payload: timestamp + body
+      const payload = timestamp + JSON.stringify(body);
+      
+      // Generate expected signature using HMAC-SHA256
+      const expectedSignature = crypto
+        .createHmac('sha256', webhookSecret)
+        .update(payload, 'utf8')
+        .digest('base64');
+
+      // Verify signature using constant-time comparison
+      const isValidSignature = crypto.timingSafeEqual(
+        Buffer.from(providedSignature, 'base64'),
+        Buffer.from(expectedSignature, 'base64')
+      );
+
+      if (!isValidSignature) {
+        console.warn('SendGrid webhook signature verification failed: Invalid signature');
+        return res.status(401).json({
+          success: false,
+          message: 'Invalid webhook signature'
+        });
+      }
+
+      // Check for replay attacks (timestamp should be within 10 minutes)
+      const eventTimestamp = parseInt(timestamp);
+      const currentTimestamp = Math.floor(Date.now() / 1000);
+      const timeDifference = Math.abs(currentTimestamp - eventTimestamp);
+      
+      if (timeDifference > 600) { // 10 minutes
+        console.warn('SendGrid webhook signature verification failed: Timestamp too old (replay attack protection)');
+        return res.status(401).json({
+          success: false,
+          message: 'Webhook timestamp too old'
+        });
+      }
+
+      // Signature and timestamp are valid, proceed to next middleware
+      next();
+    } catch (error) {
+      console.error('SendGrid webhook signature verification error:', error);
+      return res.status(401).json({
+        success: false,
+        message: 'Webhook signature verification failed'
+      });
+    }
+  };
+
+  // =======================================
   // EMAIL MONITORING ROUTES
   // =======================================
 
@@ -2166,8 +2258,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // SendGrid webhook handler for email event tracking
-  app.post('/api/email/webhook', async (req: any, res) => {
+  // SendGrid webhook handler for email event tracking (secured with signature verification)
+  app.post('/api/email/webhook', verifyWebhookSignature, async (req: any, res) => {
     try {
       const events = req.body;
       
