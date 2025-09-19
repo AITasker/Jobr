@@ -63,7 +63,7 @@ export class SubscriptionService {
 
       // Check monthly application limit
       const now = new Date();
-      const resetDate = user.monthlyApplicationsReset || user.createdAt;
+      const resetDate = user.monthlyApplicationsReset || user.createdAt || now;
       const daysSinceReset = Math.floor((now.getTime() - resetDate.getTime()) / (1000 * 60 * 60 * 24));
       
       // Reset monthly count if it's been more than 30 days
@@ -178,7 +178,7 @@ export class SubscriptionService {
 
       const limits = this.getPlanLimits(user.plan as PlanType);
       const now = new Date();
-      const resetDate = user.monthlyApplicationsReset || user.createdAt;
+      const resetDate = user.monthlyApplicationsReset || user.createdAt || now;
       const daysSinceReset = Math.floor((now.getTime() - resetDate.getTime()) / (1000 * 60 * 60 * 24));
       
       // Calculate next reset date (30 days from last reset)

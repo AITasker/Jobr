@@ -196,6 +196,28 @@ export const stripeEvents = pgTable("stripe_events", {
   index("idx_stripe_events_created_at").on(table.createdAt),
 ]);
 
+// Payment requests table for idempotency tracking
+export const paymentRequests = pgTable("payment_requests", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  idempotencyKey: varchar("idempotency_key").unique().notNull(), // userId+plan+time-bucket
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  plan: varchar("plan").notNull(),
+  merchantTransactionId: varchar("merchant_transaction_id").unique().notNull(),
+  paymentUrl: text("payment_url").notNull(),
+  amount: integer("amount").notNull(), // Amount in paise
+  status: varchar("status").default("pending").notNull(), // pending, completed, failed, expired
+  provider: varchar("provider").default("phonepe").notNull(), // phonepe, stripe
+  metadata: jsonb("metadata"), // Store additional payment data
+  expiresAt: timestamp("expires_at").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_payment_requests_idempotency_key").on(table.idempotencyKey),
+  index("idx_payment_requests_user_id").on(table.userId),
+  index("idx_payment_requests_status").on(table.status),
+  index("idx_payment_requests_expires_at").on(table.expiresAt),
+]);
+
 // Relations
 export const usersRelations = relations(users, ({ many }) => ({
   cvs: many(cvs),
@@ -203,6 +225,14 @@ export const usersRelations = relations(users, ({ many }) => ({
   apiUsage: many(apiUsage),
   authAccounts: many(authAccounts),
   subscriptions: many(subscriptions),
+  paymentRequests: many(paymentRequests),
+}));
+
+export const paymentRequestsRelations = relations(paymentRequests, ({ one }) => ({
+  user: one(users, {
+    fields: [paymentRequests.userId],
+    references: [users.id],
+  }),
 }));
 
 export const subscriptionsRelations = relations(subscriptions, ({ one }) => ({
@@ -259,6 +289,7 @@ export const insertAuthAccountSchema = createInsertSchema(authAccounts).omit({ i
 export const insertOtpCodeSchema = createInsertSchema(otpCodes).omit({ id: true, createdAt: true });
 export const insertStripeEventSchema = createInsertSchema(stripeEvents).omit({ id: true, createdAt: true });
 export const insertSubscriptionSchema = createInsertSchema(subscriptions).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertPaymentRequestSchema = createInsertSchema(paymentRequests).omit({ id: true, createdAt: true, updatedAt: true });
 
 // Additional auth-specific schemas
 export const registerSchema = z.object({
@@ -300,6 +331,45 @@ export const updateSubscriptionSchema = z.object({
   cancelAtPeriodEnd: z.boolean().optional(),
 });
 
+// Phone authentication schemas (Priority 3: Phone Auth Validation)
+export const phoneRequestSchema = z.object({
+  phoneNumber: z.string()
+    .regex(/^\+[1-9]\d{1,14}$/, "Invalid international phone number format")
+    .min(10, "Phone number too short")
+    .max(15, "Phone number too long")
+});
+
+export const phoneVerifySchema = z.object({
+  phoneNumber: z.string().regex(/^\+[1-9]\d{1,14}$/),
+  otpCode: z.string().length(6, "OTP code must be 6 digits").regex(/^\d{6}$/),
+  firstName: z.string().min(1).max(50).optional(),
+  lastName: z.string().min(1).max(50).optional()
+});
+
+// Job application schemas
+export const jobApplySchema = z.object({
+  jobId: z.string().uuid("Invalid job ID"),
+  notes: z.string().max(1000).optional()
+});
+
+export const cvTailorSchema = z.object({
+  jobId: z.string().uuid("Invalid job ID")
+});
+
+export const applicationUpdateSchema = z.object({
+  status: z.enum(["applied", "viewed", "interviewing", "offered", "rejected"]).optional(),
+  notes: z.string().max(1000).optional(),
+  interviewDate: z.string().datetime().optional()
+});
+
+export const batchPrepareSchema = z.object({
+  applicationIds: z.array(z.string().uuid()).min(1).max(5)
+});
+
+export const subscriptionCancelSchema = z.object({
+  cancelAtPeriodEnd: z.boolean().default(true)
+});
+
 // Types
 export type UpsertUser = typeof users.$inferInsert;
 export type User = typeof users.$inferSelect;
@@ -321,6 +391,8 @@ export type InsertStripeEvent = z.infer<typeof insertStripeEventSchema>;
 export type StripeEvent = typeof stripeEvents.$inferSelect;
 export type InsertSubscription = z.infer<typeof insertSubscriptionSchema>;
 export type Subscription = typeof subscriptions.$inferSelect;
+export type InsertPaymentRequest = z.infer<typeof insertPaymentRequestSchema>;
+export type PaymentRequest = typeof paymentRequests.$inferSelect;
 export type RegisterData = z.infer<typeof registerSchema>;
 export type LoginData = z.infer<typeof loginSchema>;
 export type PlanType = z.infer<typeof planSchema>;
