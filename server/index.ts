@@ -12,21 +12,75 @@ const app = express();
 // Production environment detection
 const isProduction = process.env.NODE_ENV === 'production';
 
+// PRODUCTION: Environment variable validation for production deployment
+const requiredProdVars = [
+  'DATABASE_URL',
+  'OPENAI_API_KEY',
+  'SENDGRID_API_KEY', 
+  'STRIPE_SECRET_KEY',
+  'STRIPE_WEBHOOK_SECRET',
+  'JWT_SECRET',
+  'SESSION_SECRET',
+  'APP_BASE_URL'
+];
+
+if (isProduction) {
+  const missingVars = requiredProdVars.filter(varName => !process.env[varName]);
+  if (missingVars.length > 0) {
+    console.error('PRODUCTION DEPLOYMENT BLOCKED: Missing required environment variables:', missingVars);
+    console.error('Please configure the following environment variables for production deployment:');
+    missingVars.forEach(varName => {
+      console.error(`- ${varName}`);
+    });
+    process.exit(1);
+  }
+  console.log('✅ Production environment variables validated successfully');
+}
+
 // SECURITY: Configure helmet middleware for production security headers
+// Production CSP policy removes unsafe-inline and unsafe-eval for security
+const cspConfig = isProduction ? {
+  // PRODUCTION CSP - Hardened security policy
+  directives: {
+    defaultSrc: ["'self'"],
+    scriptSrc: [
+      "'self'",
+      "https://js.stripe.com",
+      "https://checkout.stripe.com"
+      // NOTE: unsafe-inline and unsafe-eval removed for production security
+    ],
+    styleSrc: ["'self'", "https://fonts.googleapis.com"],
+    fontSrc: ["'self'", "https://fonts.gstatic.com"],
+    imgSrc: ["'self'", "data:", "https:"],
+    connectSrc: [
+      "'self'",
+      "https://api.openai.com",
+      "https://api.sendgrid.com", 
+      "https://api.stripe.com",
+      "https://jobr.co.in",
+      "wss://jobr.co.in" // WebSocket support for production domain
+    ],
+    frameSrc: ["https://js.stripe.com", "https://hooks.stripe.com"],
+    objectSrc: ["'none'"],
+    upgradeInsecureRequests: []
+  }
+} : {
+  // DEVELOPMENT CSP - More permissive for development
+  directives: {
+    defaultSrc: ["'self'"],
+    scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://js.stripe.com"],
+    styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+    fontSrc: ["'self'", "https://fonts.gstatic.com"],
+    imgSrc: ["'self'", "data:", "https:"],
+    connectSrc: ["'self'", "https://api.openai.com", "https://api.stripe.com", "https://api.sendgrid.com"],
+    frameSrc: ["'self'", "https://js.stripe.com"],
+    objectSrc: ["'none'"],
+    upgradeInsecureRequests: []
+  }
+};
+
 app.use(helmet({
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://js.stripe.com"],
-      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
-      fontSrc: ["'self'", "https://fonts.gstatic.com"],
-      imgSrc: ["'self'", "data:", "https:"],
-      connectSrc: ["'self'", "https://api.openai.com", "https://api.stripe.com", "https://api.sendgrid.com"],
-      frameSrc: ["'self'", "https://js.stripe.com"],
-      objectSrc: ["'none'"],
-      upgradeInsecureRequests: []
-    }
-  },
+  contentSecurityPolicy: cspConfig,
   hsts: {
     maxAge: 31536000, // 1 year
     includeSubDomains: true,

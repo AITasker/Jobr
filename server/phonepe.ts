@@ -130,7 +130,7 @@ export class PhonePeService {
         amount,
         redirectUrl,
         redirectMode: "POST",
-        callbackUrl: `${process.env.REPLIT_DOMAINS?.split(',')[0] || 'http://localhost:5000'}/api/phonepe/webhook`,
+        callbackUrl: `${process.env.APP_BASE_URL || process.env.REPLIT_DOMAINS?.split(',')[0] || 'http://localhost:5000'}/api/phonepe/webhook`,
         paymentInstrument: {
           type: "PAY_PAGE"
         }
