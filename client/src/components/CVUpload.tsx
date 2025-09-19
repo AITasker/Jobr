@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
@@ -28,6 +28,11 @@ export function CVUpload({ onUploadComplete, onJobMatchingTrigger }: CVUploadPro
   const [cvData, setCvData] = useState<any>(null)
   const [showAnalysis, setShowAnalysis] = useState(false)
   const { toast } = useToast()
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const handleChooseFile = () => {
+    fileInputRef.current?.click()
+  }
 
   const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -197,19 +202,22 @@ export function CVUpload({ onUploadComplete, onJobMatchingTrigger }: CVUploadPro
           <p className="text-muted-foreground mb-6 max-w-sm">
             Upload your CV and our AI will analyze it to match you with perfect job opportunities
           </p>
-          <label className="cursor-pointer">
-            <input
-              type="file"
-              accept=".pdf,.doc,.docx"
-              onChange={handleFileSelect}
-              className="sr-only"
-              data-testid="input-cv-upload"
-            />
-            <Button className="flex items-center gap-2" data-testid="button-upload-cv">
-              <Upload className="h-4 w-4" />
-              Choose File
-            </Button>
-          </label>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".pdf,.doc,.docx"
+            onChange={handleFileSelect}
+            className="sr-only"
+            data-testid="input-cv-upload"
+          />
+          <Button 
+            onClick={handleChooseFile}
+            className="flex items-center gap-2" 
+            data-testid="button-upload-cv"
+          >
+            <Upload className="h-4 w-4" />
+            Choose File
+          </Button>
           <p className="text-xs text-muted-foreground mt-3">
             Supported formats: PDF, DOC, DOCX (Max 5MB)
           </p>
