@@ -2654,6 +2654,60 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Activate Free Trial Plan
+  app.post("/api/subscription/activate-free", isAuthenticated, async (req, res) => {
+    try {
+      const userId = (req as any).user.id;
+      const user = await storage.getUserById(userId);
+      
+      if (!user) {
+        return res.status(404).json({ success: false, message: "User not found" });
+      }
+
+      // Check if user already activated free trial or has another plan
+      if (user.plan === 'Premium') {
+        return res.status(400).json({ 
+          success: false, 
+          message: "User already has Premium plan" 
+        });
+      }
+
+      // Prevent multiple free trial activations - only allow if user has never made any downloads
+      if (user.plan === 'Free' && (user.cvDownloadsThisMonth > 0 || user.cvDownloadsRemaining < 2)) {
+        return res.status(400).json({ 
+          success: false, 
+          message: "Free trial already activated. Upgrade to Premium for more downloads." 
+        });
+      }
+
+      // Activate free trial with proper limits
+      const updatedUser = await storage.updateUser(userId, {
+        plan: 'Free',
+        cvDownloadsThisMonth: 0,
+        cvDownloadsRemaining: 2,
+        monthlyDownloadsReset: new Date(),
+        subscriptionStatus: 'active'
+      });
+
+      res.json({
+        success: true,
+        message: "Free trial activated successfully",
+        user: {
+          id: updatedUser.id,
+          plan: updatedUser.plan,
+          cvDownloadsRemaining: updatedUser.cvDownloadsRemaining,
+          hasFullAccess: false
+        }
+      });
+    } catch (error) {
+      console.error("Error activating free trial:", error);
+      res.status(500).json({ 
+        success: false, 
+        message: "Failed to activate free trial" 
+      });
+    }
+  });
+
   // Secure UPI Payment Routes using PhonePe
   app.post("/api/payments/upi/create", isAuthenticated, async (req, res) => {
     try {

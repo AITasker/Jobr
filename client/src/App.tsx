@@ -12,6 +12,7 @@ import NotFound from "@/pages/not-found";
 const Dashboard = lazy(() => import("@/pages/Dashboard"));
 const Login = lazy(() => import("@/pages/Login"));
 const Billing = lazy(() => import("@/pages/Billing"));
+const PlanSelection = lazy(() => import("@/pages/PlanSelection"));
 
 // Loading component for Suspense fallback
 function PageLoading() {
@@ -44,6 +45,11 @@ function Router() {
       <Route path="/billing">
         <Suspense fallback={<PageLoading />}>
           <Billing />
+        </Suspense>
+      </Route>
+      <Route path="/plan-selection">
+        <Suspense fallback={<PageLoading />}>
+          <PlanSelection />
         </Suspense>
       </Route>
       <Route component={NotFound} />
