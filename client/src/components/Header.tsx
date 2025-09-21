@@ -38,11 +38,7 @@ export function Header({ showAuth = true }: HeaderProps) {
         <div className="flex items-center justify-between">
           {/* Logo */}
           <a href="/" className="flex items-center gap-3 hover:opacity-90 transition-opacity">
-            <img src={jobrLogo} alt="Jobr Logo" className="h-14 w-auto" />
-            <div className="hidden sm:flex items-center gap-2">
-              <span className="text-muted-foreground text-base">-</span>
-              <span className="text-base font-medium text-foreground">Your Career Compass</span>
-            </div>
+            <img src={jobrLogo} alt="Jobr Logo" className="h-20 w-auto" />
           </a>
 
           {/* Navigation */}
