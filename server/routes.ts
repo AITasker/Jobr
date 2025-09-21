@@ -371,7 +371,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/auth/me', isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
-      const user = await storage.getUser(userId);
+      let user = await storage.getUser(userId);
+      
+      // If user doesn't exist, create them automatically (for Replit auth users)
+      if (!user && req.user.authMethod === 'replit') {
+        const claims = req.user.claims;
+        user = await storage.upsertUser({
+          id: userId,
+          email: claims.email,
+          firstName: claims.first_name || '',
+          lastName: claims.last_name || '',
+          profileImageUrl: claims.profile_image_url || null,
+          plan: 'Free',
+          cvDownloadsThisMonth: 0,
+          cvDownloadsRemaining: 2,
+          monthlyDownloadsReset: new Date(),
+          subscriptionStatus: 'active'
+        });
+      }
       
       if (!user) {
         return res.status(404).json({
@@ -2657,8 +2674,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Activate Free Trial Plan
   app.post("/api/subscription/activate-free", isAuthenticated, async (req, res) => {
     try {
-      const userId = (req as any).user.id;
-      const user = await storage.getUserById(userId);
+      const userId = (req as any).user.claims.sub;
+      console.log("Activate-free: userId from claims:", userId);
+      console.log("Activate-free: authMethod:", (req as any).user.authMethod);
+      let user = await storage.getUserById(userId);
+      console.log("Activate-free: user found:", !!user);
+      
+      // If user doesn't exist, create them automatically (for Replit auth users)
+      if (!user && (req as any).user.authMethod === 'replit') {
+        const claims = (req as any).user.claims;
+        user = await storage.upsertUser({
+          id: userId,
+          email: claims.email,
+          firstName: claims.first_name || '',
+          lastName: claims.last_name || '',
+          profileImageUrl: claims.profile_image_url || null,
+          plan: 'Free',
+          cvDownloadsThisMonth: 0,
+          cvDownloadsRemaining: 2,
+          monthlyDownloadsReset: new Date(),
+          subscriptionStatus: 'active'
+        });
+      }
       
       if (!user) {
         return res.status(404).json({ success: false, message: "User not found" });
@@ -2672,8 +2709,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // Prevent multiple free trial activations - only allow if user has never made any downloads
-      if (user.plan === 'Free' && (user.cvDownloadsThisMonth > 0 || user.cvDownloadsRemaining < 2)) {
+      // Prevent multiple free trial activations - only allow if user has never downloaded (fresh state)
+      if (user.plan === 'Free' && user.cvDownloadsThisMonth > 0) {
         return res.status(400).json({ 
           success: false, 
           message: "Free trial already activated. Upgrade to Premium for more downloads." 
@@ -2711,7 +2748,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Secure UPI Payment Routes using PhonePe
   app.post("/api/payments/upi/create", isAuthenticated, async (req, res) => {
     try {
-      const userId = (req as any).user.id;
+      const userId = (req as any).user.claims.sub;
       const { couponCode } = req.body;
       const user = await storage.getUserById(userId);
       
@@ -2796,7 +2833,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/payments/upi/verify", isAuthenticated, async (req, res) => {
     try {
-      const userId = (req as any).user.id;
+      const userId = (req as any).user.claims.sub;
       const { merchantTransactionId } = req.body;
       
       if (!merchantTransactionId) {
