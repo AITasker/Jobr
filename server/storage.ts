@@ -7,7 +7,7 @@ import {
   templates,
   authAccounts,
   otpCodes,
-  paymentRequests,
+  upiPayments,
   savedSearches,
   searchHistory,
   jobBookmarks,
@@ -35,8 +35,8 @@ import {
   type InsertAuthAccount,
   type OtpCode,
   type InsertOtpCode,
-  type PaymentRequest,
-  type InsertPaymentRequest,
+  type UpiPayment,
+  type InsertUpiPayment,
   type SavedSearch,
   type InsertSavedSearch,
   type SearchHistory,
@@ -67,6 +67,7 @@ import { eq, and, desc, sql, or, gte, ilike } from "drizzle-orm";
 export interface IStorage {
   // User operations (required for Replit Auth)
   getUser(id: string): Promise<User | undefined>;
+  getUserById(id: string): Promise<User | undefined>;
   upsertUser(user: UpsertUser): Promise<User>;
   updateUser(id: string, updates: Partial<User>): Promise<User>;
   createUser(user: Omit<UpsertUser, 'id'>): Promise<User>;
@@ -119,10 +120,9 @@ export interface IStorage {
   updateUserPlan(userId: string, plan: string, subscriptionStatus?: string, periodEnd?: Date): Promise<User>;
 
   // Payment Request operations for payment idempotency (Priority 1)
-  getPaymentRequestByKey(idempotencyKey: string): Promise<PaymentRequest | undefined>;
-  setPaymentRequestByKey(paymentRequest: InsertPaymentRequest): Promise<PaymentRequest>;
-  updatePaymentRequestStatus(id: string, status: string, metadata?: any): Promise<PaymentRequest>;
-  cleanupExpiredPaymentRequests(): Promise<void>;
+  createUpiPayment(paymentData: InsertUpiPayment): Promise<UpiPayment>;
+  updateUpiPaymentStatus(id: string, status: string, paymentReference?: string): Promise<UpiPayment>;
+  getUserUpiPayments(userId: string): Promise<UpiPayment[]>;
 
   // Enhanced Job Search operations
   getJobsWithFilters(filters: JobSearchFilters): Promise<Job[]>;
@@ -194,6 +194,10 @@ export class DatabaseStorage implements IStorage {
   async getUser(id: string): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.id, id));
     return user;
+  }
+
+  async getUserById(id: string): Promise<User | undefined> {
+    return this.getUser(id);
   }
 
   async upsertUser(userData: UpsertUser): Promise<User> {
@@ -514,37 +518,36 @@ export class DatabaseStorage implements IStorage {
   }
 
 
-  // Payment Request operations for payment idempotency (Priority 1)
-  async getPaymentRequestByKey(idempotencyKey: string): Promise<PaymentRequest | undefined> {
-    const [paymentRequest] = await db
-      .select()
-      .from(paymentRequests)
-      .where(eq(paymentRequests.idempotencyKey, idempotencyKey));
-    return paymentRequest;
+  // UPI Payment operations
+  async createUpiPayment(paymentData: InsertUpiPayment): Promise<UpiPayment> {
+    const [payment] = await db.insert(upiPayments).values(paymentData).returning();
+    return payment;
   }
 
-  async setPaymentRequestByKey(paymentRequestData: InsertPaymentRequest): Promise<PaymentRequest> {
-    const [paymentRequest] = await db.insert(paymentRequests).values(paymentRequestData).returning();
-    return paymentRequest;
-  }
+  async updateUpiPaymentStatus(id: string, status: string, paymentReference?: string): Promise<UpiPayment> {
+    const updateData: Partial<UpiPayment> = {
+      status,
+      updatedAt: new Date()
+    };
+    
+    if (paymentReference) {
+      updateData.paymentReference = paymentReference;
+    }
 
-  async updatePaymentRequestStatus(id: string, status: string, metadata?: any): Promise<PaymentRequest> {
-    const [paymentRequest] = await db
-      .update(paymentRequests)
-      .set({ 
-        status, 
-        metadata,
-        updatedAt: new Date() 
-      })
-      .where(eq(paymentRequests.id, id))
+    const [payment] = await db
+      .update(upiPayments)
+      .set(updateData)
+      .where(eq(upiPayments.id, id))
       .returning();
-    return paymentRequest;
+    return payment;
   }
 
-  async cleanupExpiredPaymentRequests(): Promise<void> {
-    const now = new Date();
-    await db.delete(paymentRequests)
-      .where(sql`${paymentRequests.expiresAt} < ${now}`);
+  async getUserUpiPayments(userId: string): Promise<UpiPayment[]> {
+    return await db
+      .select()
+      .from(upiPayments)
+      .where(eq(upiPayments.userId, userId))
+      .orderBy(desc(upiPayments.createdAt));
   }
 
   // Enhanced Job Search operations

@@ -25,7 +25,6 @@ import { registerSchema, loginSchema, insertJobSchema, insertApplicationSchema, 
 import { checkDatabaseHealth } from "./db";
 import { createErrorResponse, ERROR_CODES } from "./utils/errorHandler";
 import { addAuthMetricsRoute } from "./authMetricsRoute";
-import { createPaypalOrder, capturePaypalOrder, loadPaypalDefault } from "./paypal";
 
 // Configure rate limiting for authentication routes (disabled in test mode)
 const loginRateLimit = rateLimit({
@@ -2618,18 +2617,118 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // PayPal Integration Routes - Easy Payment Solution
-  app.get("/paypal/setup", async (req, res) => {
-    await loadPaypalDefault(req, res);
+  // Subscription Usage API
+  app.get("/api/subscription/usage", isAuthenticated, async (req, res) => {
+    try {
+      const userId = (req as any).user.id;
+      const user = await storage.getUserById(userId);
+      
+      if (!user) {
+        return res.status(404).json({ success: false, message: "User not found" });
+      }
+
+      // Calculate usage stats based on new schema
+      const currentPlan = user.plan || 'Free';
+      const cvDownloadLimit = currentPlan === 'Premium' ? -1 : 2; // Unlimited for Premium, 2 for Free
+      const cvDownloadsThisMonth = user.cvDownloadsThisMonth || 0;
+      const remainingDownloads = cvDownloadLimit === -1 ? -1 : Math.max(0, cvDownloadLimit - cvDownloadsThisMonth);
+      
+      // Calculate next reset date (first day of next month)
+      const now = new Date();
+      const nextReset = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+
+      res.json({
+        success: true,
+        currentPlan,
+        cvDownloadsThisMonth,
+        cvDownloadLimit,
+        remainingDownloads,
+        hasFullAccess: currentPlan === 'Premium',
+        daysSinceReset: Math.floor((now.getTime() - (user.monthlyDownloadsReset?.getTime() || now.getTime())) / (1000 * 60 * 60 * 24)),
+        nextResetDate: nextReset.toISOString()
+      });
+    } catch (error) {
+      console.error("Error fetching subscription usage:", error);
+      res.status(500).json({ success: false, message: "Failed to fetch usage stats" });
+    }
   });
 
-  app.post("/paypal/order", async (req, res) => {
-    // Request body should contain: { intent, amount, currency }
-    await createPaypalOrder(req, res);
+  // UPI Payment Routes
+  app.post("/api/payments/upi/create", isAuthenticated, async (req, res) => {
+    try {
+      const userId = (req as any).user.id;
+      
+      // Create UPI payment record
+      const paymentData = {
+        userId,
+        amount: 999, // ₹999 for Premium
+        status: 'pending' as const,
+        notes: 'Upgrade to Premium plan'
+      };
+
+      const payment = await storage.createUpiPayment(paymentData);
+
+      // Return payment details with QR code info
+      res.json({
+        success: true,
+        payment: {
+          id: payment.id,
+          amount: payment.amount,
+          status: payment.status,
+          qrCode: {
+            // In a real implementation, you would generate actual UPI QR code data here
+            upiId: process.env.UPI_ID || "merchant@upi",
+            amount: payment.amount,
+            transactionNote: `Jobr Premium Plan - ${payment.id}`,
+            merchantCode: "JOBR999"
+          }
+        }
+      });
+    } catch (error) {
+      console.error("Error creating UPI payment:", error);
+      res.status(500).json({ success: false, message: "Failed to create payment" });
+    }
   });
 
-  app.post("/paypal/order/:orderID/capture", async (req, res) => {
-    await capturePaypalOrder(req, res);
+  app.post("/api/payments/upi/verify", isAuthenticated, async (req, res) => {
+    try {
+      const userId = (req as any).user.id;
+      const { paymentId, paymentReference } = req.body;
+      
+      if (!paymentId || !paymentReference) {
+        return res.status(400).json({ success: false, message: "Payment ID and reference are required" });
+      }
+
+      // Get user's UPI payments and find the specific one
+      const userPayments = await storage.getUserUpiPayments(userId);
+      const payment = userPayments.find(p => p.id === paymentId);
+      
+      if (!payment) {
+        return res.status(404).json({ success: false, message: "Payment not found" });
+      }
+
+      if (payment.status === 'completed') {
+        return res.status(400).json({ success: false, message: "Payment already completed" });
+      }
+
+      // Update payment status to completed
+      await storage.updateUpiPaymentStatus(paymentId, 'completed', paymentReference);
+      
+      // Upgrade user to Premium plan
+      const nextPeriodEnd = new Date();
+      nextPeriodEnd.setMonth(nextPeriodEnd.getMonth() + 1); // One month from now
+      
+      await storage.updateUserPlan(userId, 'Premium', 'active', nextPeriodEnd);
+
+      res.json({
+        success: true,
+        message: "Payment verified and plan upgraded successfully",
+        newPlan: 'Premium'
+      });
+    } catch (error) {
+      console.error("Error verifying payment:", error);
+      res.status(500).json({ success: false, message: "Failed to verify payment" });
+    }
   });
 
   const httpServer = createServer(app);

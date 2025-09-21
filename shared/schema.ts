@@ -33,12 +33,12 @@ export const users = pgTable("users", {
   firstName: varchar("first_name"),
   lastName: varchar("last_name"),
   profileImageUrl: varchar("profile_image_url"),
-  plan: varchar("plan").default("Free").notNull(), // Free, Premium, Pro
+  plan: varchar("plan").default("Free").notNull(), // Free, Premium
   subscriptionStatus: varchar("subscription_status").default("active"), // active, canceled, past_due, incomplete
   subscriptionCurrentPeriodEnd: timestamp("subscription_current_period_end"),
-  applicationsThisMonth: integer("applications_this_month").default(0).notNull(),
-  monthlyApplicationsReset: timestamp("monthly_applications_reset").defaultNow(),
-  creditsRemaining: integer("credits_remaining").default(5).notNull(), // Free tier gets 5 applications
+  cvDownloadsThisMonth: integer("cv_downloads_this_month").default(0).notNull(),
+  monthlyDownloadsReset: timestamp("monthly_downloads_reset").defaultNow(),
+  cvDownloadsRemaining: integer("cv_downloads_remaining").default(2).notNull(), // Free tier gets 2 CV downloads
   apiCallsToday: integer("api_calls_today").default(0).notNull(),
   lastApiCallReset: timestamp("last_api_call_reset").defaultNow(),
   createdAt: timestamp("created_at").defaultNow(),
@@ -324,26 +324,19 @@ export const otpCodes = pgTable("otp_codes", {
 ]);
 
 
-// Payment requests table for idempotency tracking
-export const paymentRequests = pgTable("payment_requests", {
+// UPI payments table for simple payment tracking
+export const upiPayments = pgTable("upi_payments", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  idempotencyKey: varchar("idempotency_key").unique().notNull(), // userId+plan+time-bucket
   userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-  plan: varchar("plan").notNull(),
-  merchantTransactionId: varchar("merchant_transaction_id").unique().notNull(),
-  paymentUrl: text("payment_url").notNull(),
-  amount: integer("amount").notNull(), // Amount in paise
-  status: varchar("status").default("pending").notNull(), // pending, completed, failed, expired
-  provider: varchar("provider").default("phonepe").notNull(), // phonepe
-  metadata: jsonb("metadata"), // Store additional payment data
-  expiresAt: timestamp("expires_at").notNull(),
+  amount: integer("amount").notNull(), // Amount in rupees (₹999)
+  status: varchar("status").default("pending").notNull(), // pending, completed, failed
+  paymentReference: varchar("payment_reference"), // User can enter UPI reference number
+  notes: text("notes"), // User notes about payment
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => [
-  index("idx_payment_requests_idempotency_key").on(table.idempotencyKey),
-  index("idx_payment_requests_user_id").on(table.userId),
-  index("idx_payment_requests_status").on(table.status),
-  index("idx_payment_requests_expires_at").on(table.expiresAt),
+  index("idx_upi_payments_user_id").on(table.userId),
+  index("idx_upi_payments_status").on(table.status),
 ]);
 
 // Saved searches table for storing user search queries and filters
@@ -436,7 +429,7 @@ export const usersRelations = relations(users, ({ many, one }) => ({
   applicationAnalytics: many(applicationAnalytics),
   apiUsage: many(apiUsage),
   authAccounts: many(authAccounts),
-  paymentRequests: many(paymentRequests),
+  upiPayments: many(upiPayments),
   savedSearches: many(savedSearches),
   searchHistory: many(searchHistory),
   jobBookmarks: many(jobBookmarks),
@@ -444,9 +437,9 @@ export const usersRelations = relations(users, ({ many, one }) => ({
   jobAlerts: many(jobAlerts),
 }));
 
-export const paymentRequestsRelations = relations(paymentRequests, ({ one }) => ({
+export const upiPaymentsRelations = relations(upiPayments, ({ one }) => ({
   user: one(users, {
-    fields: [paymentRequests.userId],
+    fields: [upiPayments.userId],
     references: [users.id],
   }),
 }));
@@ -614,7 +607,7 @@ export const insertApiUsageSchema = createInsertSchema(apiUsage).omit({ id: true
 export const insertTemplateSchema = createInsertSchema(templates).omit({ id: true, createdAt: true });
 export const insertAuthAccountSchema = createInsertSchema(authAccounts).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertOtpCodeSchema = createInsertSchema(otpCodes).omit({ id: true, createdAt: true });
-export const insertPaymentRequestSchema = createInsertSchema(paymentRequests).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertUpiPaymentSchema = createInsertSchema(upiPayments).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertSavedSearchSchema = createInsertSchema(savedSearches).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertSearchHistorySchema = createInsertSchema(searchHistory).omit({ id: true, createdAt: true });
 export const insertJobBookmarkSchema = createInsertSchema(jobBookmarks).omit({ id: true, createdAt: true });
@@ -723,8 +716,8 @@ export type InsertAuthAccount = z.infer<typeof insertAuthAccountSchema>;
 export type AuthAccount = typeof authAccounts.$inferSelect;
 export type InsertOtpCode = z.infer<typeof insertOtpCodeSchema>;
 export type OtpCode = typeof otpCodes.$inferSelect;
-export type InsertPaymentRequest = z.infer<typeof insertPaymentRequestSchema>;
-export type PaymentRequest = typeof paymentRequests.$inferSelect;
+export type InsertUpiPayment = z.infer<typeof insertUpiPaymentSchema>;
+export type UpiPayment = typeof upiPayments.$inferSelect;
 export type RegisterData = z.infer<typeof registerSchema>;
 export type LoginData = z.infer<typeof loginSchema>;
 export type PlanType = z.infer<typeof planSchema>;
