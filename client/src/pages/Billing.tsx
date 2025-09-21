@@ -6,8 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { useQuery } from '@tanstack/react-query'
 import { useToast } from '@/hooks/use-toast'
-import { CreditCard, Calendar, Users, Zap, BarChart3, MessageSquare, Crown } from 'lucide-react'
-import PayPalButton from '@/components/PayPalButton'
+import { QrCode, Download, Zap, BarChart3, MessageSquare, Crown } from 'lucide-react'
 
 interface UserData {
   id: string
@@ -18,12 +17,10 @@ interface UserData {
 
 interface UsageStats {
   currentPlan: string
-  applicationsThisMonth: number
-  applicationLimit: number
-  remainingApplications: number
-  hasAIFeatures: boolean
-  hasAdvancedAnalytics: boolean
-  hasInterviewPrep: boolean
+  cvDownloadsThisMonth: number
+  cvDownloadLimit: number
+  remainingDownloads: number
+  hasFullAccess: boolean
   daysSinceReset: number
   nextResetDate: string
 }
@@ -38,66 +35,36 @@ export default function Billing() {
     enabled: isAuthenticated,
   })
 
-  const [showPayPal, setShowPayPal] = useState<string | null>(null)
+  const [showUpiPayment, setShowUpiPayment] = useState(false)
 
-  const getPlanPrice = (plan: string) => {
-    switch (plan) {
-      case 'Premium':
-        return { amount: '499', currency: 'INR', priceDisplay: '₹499/month' }
-      case 'Pro':
-        return { amount: '999', currency: 'INR', priceDisplay: '₹999/month' }
-      default:
-        return { amount: '0', currency: 'INR', priceDisplay: 'Free' }
-    }
-  }
-
-  const handlePaymentSuccess = (plan: string) => {
+  const handlePaymentSuccess = () => {
     toast({
-      title: "Payment Successful!",
-      description: `You have successfully upgraded to ${plan}. Your new features will be available shortly.`,
+      title: "Payment Instructions Sent!",
+      description: "Please complete the UPI payment. Your plan will be upgraded once payment is confirmed.",
       variant: "default",
     })
-    // In a real app, you would update the user's subscription status
-    setShowPayPal(null)
-  }
-
-  const handlePaymentError = () => {
-    toast({
-      title: "Payment Failed",
-      description: "There was an issue processing your payment. Please try again.",
-      variant: "destructive",
-    })
-    setShowPayPal(null)
+    setShowUpiPayment(false)
   }
 
   const getPlanFeatures = (plan: string) => {
     switch (plan) {
       case 'Free':
         return [
-          { icon: Users, text: '5 Applications per month', included: true },
-          { icon: MessageSquare, text: 'Basic Job Matching', included: true },
-          { icon: CreditCard, text: 'Application Tracking', included: true },
-          { icon: Zap, text: 'AI-Generated Cover Letters', included: false },
-          { icon: BarChart3, text: 'Advanced Analytics', included: false },
+          { icon: Download, text: '2 CV Downloads per month', included: true },
+          { icon: MessageSquare, text: 'Basic Job Search', included: true },
+          { icon: Zap, text: 'AI-Powered Job Matching', included: false },
+          { icon: BarChart3, text: 'Application Analytics', included: false },
           { icon: Crown, text: 'Priority Support', included: false },
+          { icon: MessageSquare, text: 'Unlimited Applications', included: false },
         ]
       case 'Premium':
         return [
-          { icon: Users, text: 'Unlimited Applications', included: true },
-          { icon: Zap, text: 'AI-Generated Cover Letters', included: true },
-          { icon: MessageSquare, text: 'Advanced Job Matching', included: true },
+          { icon: Download, text: 'Unlimited CV Downloads', included: true },
+          { icon: MessageSquare, text: 'Unlimited Job Applications', included: true },
+          { icon: Zap, text: 'AI-Powered Job Matching', included: true },
+          { icon: BarChart3, text: 'Application Analytics', included: true },
           { icon: Crown, text: 'Priority Support', included: true },
-          { icon: BarChart3, text: 'Advanced Analytics', included: false },
-          { icon: MessageSquare, text: 'Interview Preparation', included: false },
-        ]
-      case 'Pro':
-        return [
-          { icon: Users, text: 'Unlimited Applications', included: true },
-          { icon: Zap, text: 'AI-Generated Cover Letters', included: true },
-          { icon: MessageSquare, text: 'Advanced Job Matching', included: true },
-          { icon: Crown, text: 'Priority Support', included: true },
-          { icon: BarChart3, text: 'Advanced Analytics', included: true },
-          { icon: MessageSquare, text: 'Interview Preparation', included: true },
+          { icon: MessageSquare, text: 'AI Cover Letter Generation', included: true },
         ]
       default:
         return []
@@ -121,8 +88,8 @@ export default function Billing() {
   }
 
   const currentPlan = usageStats?.currentPlan || (user as any)?.plan || 'Free'
-  const usagePercentage = usageStats?.applicationLimit !== -1 
-    ? Math.round((usageStats?.applicationsThisMonth || 0) / (usageStats?.applicationLimit || 1) * 100)
+  const usagePercentage = usageStats?.cvDownloadLimit !== -1 
+    ? Math.round((usageStats?.cvDownloadsThisMonth || 0) / (usageStats?.cvDownloadLimit || 1) * 100)
     : 0
 
   return (
@@ -157,61 +124,54 @@ export default function Billing() {
             ))}
           </div>
 
-          {/* Action Buttons */}
+          {/* Payment Section */}
           <div className="space-y-4">
             {currentPlan === 'Free' && (
-              <div className="grid gap-4">
-                <div className="space-y-2">
-                  <h4 className="font-medium">Upgrade to Premium (₹499/month)</h4>
-                  {showPayPal === 'Premium' ? (
-                    <div className="flex gap-2 items-center">
-                      <PayPalButton 
-                        amount={getPlanPrice('Premium').amount}
-                        currency={getPlanPrice('Premium').currency}
-                        intent="capture"
-                      />
-                      <Button 
-                        variant="outline" 
-                        onClick={() => setShowPayPal(null)}
-                        data-testid="button-cancel-payment"
-                      >
-                        Cancel
-                      </Button>
+              <div className="space-y-4">
+                <div className="border rounded-lg p-4 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950 dark:to-indigo-950">
+                  <h4 className="font-medium text-lg mb-2">Upgrade to Premium - ₹999/month</h4>
+                  <p className="text-sm text-muted-foreground mb-4">Get unlimited access to all features</p>
+                  
+                  {showUpiPayment ? (
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-center p-6 border-2 border-dashed border-primary rounded-lg bg-background">
+                        <div className="text-center">
+                          <QrCode className="h-24 w-24 mx-auto mb-4 text-primary" />
+                          <p className="text-lg font-medium mb-2">Scan & Pay ₹999</p>
+                          <p className="text-sm text-muted-foreground mb-4">
+                            Scan this QR code with any UPI app to complete payment
+                          </p>
+                          <div className="text-xs text-muted-foreground">
+                            <p>Payment ID: UPI-{Date.now()}</p>
+                            <p>Amount: ₹999.00</p>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <div className="flex gap-2">
+                        <Button 
+                          variant="outline" 
+                          onClick={() => setShowUpiPayment(false)}
+                          data-testid="button-cancel-payment"
+                        >
+                          Cancel
+                        </Button>
+                        <Button 
+                          onClick={handlePaymentSuccess}
+                          data-testid="button-payment-completed"
+                        >
+                          I've Completed Payment
+                        </Button>
+                      </div>
                     </div>
                   ) : (
                     <Button 
-                      onClick={() => setShowPayPal('Premium')}
+                      onClick={() => setShowUpiPayment(true)}
                       data-testid="button-upgrade-premium"
+                      className="w-full"
                     >
-                      Pay with PayPal - ₹499/month
-                    </Button>
-                  )}
-                </div>
-                
-                <div className="space-y-2">
-                  <h4 className="font-medium">Upgrade to Pro (₹999/month)</h4>
-                  {showPayPal === 'Pro' ? (
-                    <div className="flex gap-2 items-center">
-                      <PayPalButton 
-                        amount={getPlanPrice('Pro').amount}
-                        currency={getPlanPrice('Pro').currency}
-                        intent="capture"
-                      />
-                      <Button 
-                        variant="outline" 
-                        onClick={() => setShowPayPal(null)}
-                        data-testid="button-cancel-payment"
-                      >
-                        Cancel
-                      </Button>
-                    </div>
-                  ) : (
-                    <Button 
-                      variant="outline"
-                      onClick={() => setShowPayPal('Pro')}
-                      data-testid="button-upgrade-pro"
-                    >
-                      Pay with PayPal - ₹999/month
+                      <QrCode className="h-4 w-4 mr-2" />
+                      Pay ₹999 with UPI
                     </Button>
                   )}
                 </div>
@@ -219,37 +179,10 @@ export default function Billing() {
             )}
             
             {currentPlan === 'Premium' && (
-              <div className="space-y-2">
-                <h4 className="font-medium">Upgrade to Pro (₹999/month)</h4>
-                {showPayPal === 'Pro' ? (
-                  <div className="flex gap-2 items-center">
-                    <PayPalButton 
-                      amount={getPlanPrice('Pro').amount}
-                      currency={getPlanPrice('Pro').currency}
-                      intent="capture"
-                    />
-                    <Button 
-                      variant="outline" 
-                      onClick={() => setShowPayPal(null)}
-                      data-testid="button-cancel-payment"
-                    >
-                      Cancel
-                    </Button>
-                  </div>
-                ) : (
-                  <Button 
-                    onClick={() => setShowPayPal('Pro')}
-                    data-testid="button-upgrade-pro"
-                  >
-                    Pay with PayPal - ₹999/month
-                  </Button>
-                )}
-              </div>
-            )}
-            
-            {currentPlan === 'Pro' && (
-              <div className="text-center p-4 bg-muted rounded-lg">
-                <p className="text-muted-foreground">You're on the highest tier! Enjoying all premium features.</p>
+              <div className="text-center p-6 bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-950 dark:to-emerald-950 rounded-lg border">
+                <Crown className="h-12 w-12 mx-auto mb-4 text-yellow-500" />
+                <h4 className="font-medium text-lg mb-2">Premium Plan Active</h4>
+                <p className="text-muted-foreground">You have access to all premium features!</p>
               </div>
             )}
           </div>
@@ -267,20 +200,20 @@ export default function Billing() {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {/* Application Usage */}
+              {/* CV Download Usage */}
               <div>
                 <div className="flex justify-between items-center mb-2">
-                  <span className="text-sm font-medium">Applications This Month</span>
+                  <span className="text-sm font-medium">CV Downloads This Month</span>
                   <span className="text-sm text-muted-foreground">
-                    {usageStats.applicationsThisMonth} / {usageStats.applicationLimit === -1 ? '∞' : usageStats.applicationLimit}
+                    {usageStats.cvDownloadsThisMonth} / {usageStats.cvDownloadLimit === -1 ? '∞' : usageStats.cvDownloadLimit}
                   </span>
                 </div>
-                {usageStats.applicationLimit !== -1 && (
-                  <Progress value={usagePercentage} className="h-2" data-testid="progress-applications" />
+                {usageStats.cvDownloadLimit !== -1 && (
+                  <Progress value={usagePercentage} className="h-2" data-testid="progress-downloads" />
                 )}
-                {usageStats.remainingApplications !== -1 && usageStats.remainingApplications <= 2 && (
+                {usageStats.remainingDownloads !== -1 && usageStats.remainingDownloads <= 1 && (
                   <p className="text-sm text-amber-600 dark:text-amber-400 mt-1">
-                    ⚠️ You have {usageStats.remainingApplications} applications remaining this month
+                    ⚠️ You have {usageStats.remainingDownloads} CV downloads remaining this month
                   </p>
                 )}
               </div>
@@ -292,21 +225,26 @@ export default function Billing() {
 
               {/* Feature Access */}
               <div className="pt-4 border-t">
-                <h4 className="font-medium mb-2">Feature Access:</h4>
-                <div className="grid grid-cols-2 gap-2 text-sm">
+                <h4 className="font-medium mb-2">Current Plan Features:</h4>
+                <div className="space-y-2 text-sm">
                   <div className="flex items-center gap-2">
-                    <span className={usageStats.hasAIFeatures ? 'text-green-600' : 'text-muted-foreground'}>
-                      {usageStats.hasAIFeatures ? '✓' : '✗'} AI Features
+                    <span className={currentPlan === 'Premium' ? 'text-green-600' : 'text-muted-foreground'}>
+                      {currentPlan === 'Premium' ? '✓' : '✗'} Unlimited CV Downloads
                     </span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className={usageStats.hasAdvancedAnalytics ? 'text-green-600' : 'text-muted-foreground'}>
-                      {usageStats.hasAdvancedAnalytics ? '✓' : '✗'} Advanced Analytics
+                    <span className={currentPlan === 'Premium' ? 'text-green-600' : 'text-muted-foreground'}>
+                      {currentPlan === 'Premium' ? '✓' : '✗'} AI-Powered Job Matching
                     </span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className={usageStats.hasInterviewPrep ? 'text-green-600' : 'text-muted-foreground'}>
-                      {usageStats.hasInterviewPrep ? '✓' : '✗'} Interview Prep
+                    <span className={currentPlan === 'Premium' ? 'text-green-600' : 'text-muted-foreground'}>
+                      {currentPlan === 'Premium' ? '✓' : '✗'} Application Analytics
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className={currentPlan === 'Premium' ? 'text-green-600' : 'text-muted-foreground'}>
+                      {currentPlan === 'Premium' ? '✓' : '✗'} Priority Support
                     </span>
                   </div>
                 </div>
