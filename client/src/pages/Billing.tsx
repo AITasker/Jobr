@@ -4,9 +4,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useToast } from '@/hooks/use-toast'
-import { QrCode, Download, Zap, BarChart3, MessageSquare, Crown } from 'lucide-react'
+import { QrCode, Download, Zap, BarChart3, MessageSquare, Crown, Loader2 } from 'lucide-react'
+import { apiRequest } from '@/lib/queryClient'
 
 interface UserData {
   id: string
@@ -25,9 +26,22 @@ interface UsageStats {
   nextResetDate: string
 }
 
+interface UpiPayment {
+  id: string
+  amount: number
+  status: 'pending' | 'completed' | 'failed'
+  qrCode: {
+    upiId: string
+    amount: number
+    transactionNote: string
+    merchantCode: string
+  }
+}
+
 export default function Billing() {
   const { user, isAuthenticated } = useAuth()
   const { toast } = useToast()
+  const queryClient = useQueryClient()
 
   // Fetch usage statistics from subscription service
   const { data: usageStats, isLoading: usageLoading } = useQuery<UsageStats>({
@@ -35,15 +49,78 @@ export default function Billing() {
     enabled: isAuthenticated,
   })
 
-  const [showUpiPayment, setShowUpiPayment] = useState(false)
+  const [currentPayment, setCurrentPayment] = useState<UpiPayment | null>(null)
+  const [paymentReference, setPaymentReference] = useState('')
 
-  const handlePaymentSuccess = () => {
-    toast({
-      title: "Payment Instructions Sent!",
-      description: "Please complete the UPI payment. Your plan will be upgraded once payment is confirmed.",
-      variant: "default",
-    })
-    setShowUpiPayment(false)
+  // Create UPI payment mutation
+  const createPaymentMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest('/api/payments/upi/create', {
+        method: 'POST',
+        body: JSON.stringify({ plan: 'Premium' }),
+        headers: { 'Content-Type': 'application/json' }
+      })
+      if (!response.success) throw new Error(response.message)
+      return response.payment
+    },
+    onSuccess: (payment) => {
+      setCurrentPayment(payment)
+      toast({
+        title: "Payment Created",
+        description: "Please scan the QR code to complete payment.",
+      })
+    },
+    onError: (error) => {
+      toast({
+        title: "Error",
+        description: "Failed to create payment. Please try again.",
+        variant: "destructive",
+      })
+    }
+  })
+
+  // Verify payment mutation
+  const verifyPaymentMutation = useMutation({
+    mutationFn: async () => {
+      if (!currentPayment || !paymentReference.trim()) {
+        throw new Error('Payment reference is required')
+      }
+      const response = await apiRequest('/api/payments/upi/verify', {
+        method: 'POST',
+        body: JSON.stringify({ 
+          paymentId: currentPayment.id, 
+          paymentReference: paymentReference.trim()
+        }),
+        headers: { 'Content-Type': 'application/json' }
+      })
+      if (!response.success) throw new Error(response.message)
+      return response
+    },
+    onSuccess: () => {
+      // Invalidate cache to refresh user data and usage stats
+      queryClient.invalidateQueries({ queryKey: ['/api/auth/user'] })
+      queryClient.invalidateQueries({ queryKey: ['/api/subscription/usage'] })
+      
+      setCurrentPayment(null)
+      setPaymentReference('')
+      
+      toast({
+        title: "Payment Verified!",
+        description: "Your account has been upgraded to Premium successfully.",
+      })
+    },
+    onError: (error) => {
+      toast({
+        title: "Verification Failed",
+        description: error.message || "Please check your payment reference and try again.",
+        variant: "destructive",
+      })
+    }
+  })
+
+  const handleCancelPayment = () => {
+    setCurrentPayment(null)
+    setPaymentReference('')
   }
 
   const getPlanFeatures = (plan: string) => {
@@ -132,46 +209,84 @@ export default function Billing() {
                   <h4 className="font-medium text-lg mb-2">Upgrade to Premium - ₹999/month</h4>
                   <p className="text-sm text-muted-foreground mb-4">Get unlimited access to all features</p>
                   
-                  {showUpiPayment ? (
+                  {currentPayment ? (
                     <div className="space-y-4">
                       <div className="flex items-center justify-center p-6 border-2 border-dashed border-primary rounded-lg bg-background">
                         <div className="text-center">
                           <QrCode className="h-24 w-24 mx-auto mb-4 text-primary" />
-                          <p className="text-lg font-medium mb-2">Scan & Pay ₹999</p>
+                          <p className="text-lg font-medium mb-2">Scan & Pay ₹{currentPayment.amount}</p>
                           <p className="text-sm text-muted-foreground mb-4">
-                            Scan this QR code with any UPI app to complete payment
+                            Use any UPI app to pay to: {currentPayment.qrCode.upiId}
                           </p>
-                          <div className="text-xs text-muted-foreground">
-                            <p>Payment ID: UPI-{Date.now()}</p>
-                            <p>Amount: ₹999.00</p>
+                          <div className="text-xs text-muted-foreground space-y-1">
+                            <p>Payment ID: {currentPayment.id}</p>
+                            <p>Amount: ₹{currentPayment.amount}.00</p>
+                            <p>Note: {currentPayment.qrCode.transactionNote}</p>
                           </div>
                         </div>
                       </div>
                       
-                      <div className="flex gap-2">
-                        <Button 
-                          variant="outline" 
-                          onClick={() => setShowUpiPayment(false)}
-                          data-testid="button-cancel-payment"
-                        >
-                          Cancel
-                        </Button>
-                        <Button 
-                          onClick={handlePaymentSuccess}
-                          data-testid="button-payment-completed"
-                        >
-                          I've Completed Payment
-                        </Button>
+                      <div className="space-y-3">
+                        <div>
+                          <label className="text-sm font-medium">Payment Reference/UTR Number</label>
+                          <input
+                            type="text"
+                            value={paymentReference}
+                            onChange={(e) => setPaymentReference(e.target.value)}
+                            placeholder="Enter UTR or transaction reference"
+                            className="w-full mt-1 px-3 py-2 border rounded-md"
+                            data-testid="input-payment-reference"
+                          />
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Enter the reference number from your UPI app after payment
+                          </p>
+                        </div>
+                        
+                        <div className="flex gap-2">
+                          <Button 
+                            variant="outline" 
+                            onClick={handleCancelPayment}
+                            disabled={verifyPaymentMutation.isPending}
+                            data-testid="button-cancel-payment"
+                          >
+                            Cancel
+                          </Button>
+                          <Button 
+                            onClick={() => verifyPaymentMutation.mutate()}
+                            disabled={verifyPaymentMutation.isPending || !paymentReference.trim()}
+                            data-testid="button-verify-payment"
+                            className="flex-1"
+                          >
+                            {verifyPaymentMutation.isPending ? (
+                              <>
+                                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                Verifying...
+                              </>
+                            ) : (
+                              'Verify Payment'
+                            )}
+                          </Button>
+                        </div>
                       </div>
                     </div>
                   ) : (
                     <Button 
-                      onClick={() => setShowUpiPayment(true)}
+                      onClick={() => createPaymentMutation.mutate()}
+                      disabled={createPaymentMutation.isPending}
                       data-testid="button-upgrade-premium"
                       className="w-full"
                     >
-                      <QrCode className="h-4 w-4 mr-2" />
-                      Pay ₹999 with UPI
+                      {createPaymentMutation.isPending ? (
+                        <>
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          Creating Payment...
+                        </>
+                      ) : (
+                        <>
+                          <QrCode className="h-4 w-4 mr-2" />
+                          Pay ₹999 with UPI
+                        </>
+                      )}
                     </Button>
                   )}
                 </div>
