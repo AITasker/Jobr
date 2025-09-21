@@ -21,6 +21,7 @@ import { EmailMonitoringService } from "./emailMonitoringService";
 import { ApplicationLifecycleService } from "./applicationLifecycleService";
 import { NotificationService } from "./notificationService";
 import { AnalyticsService } from "./analyticsService";
+import { PhonePeService } from "./phonepe";
 import { registerSchema, loginSchema, insertJobSchema, insertApplicationSchema, phoneRequestSchema, phoneVerifySchema, jobApplySchema, cvTailorSchema, applicationUpdateSchema, batchPrepareSchema, bookmarkJobSchema, jobSearchSchema, saveSearchSchema, updatePreferencesSchema } from "@shared/schema";
 import { checkDatabaseHealth } from "./db";
 import { createErrorResponse, ERROR_CODES } from "./utils/errorHandler";
@@ -2653,39 +2654,64 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // UPI Payment Routes
+  // Secure UPI Payment Routes using PhonePe
   app.post("/api/payments/upi/create", isAuthenticated, async (req, res) => {
     try {
       const userId = (req as any).user.id;
+      const user = await storage.getUserById(userId);
       
-      // Create UPI payment record
+      if (!user) {
+        return res.status(404).json({ success: false, message: "User not found" });
+      }
+
+      // Check if user already has Premium
+      if (user.plan === 'Premium') {
+        return res.status(400).json({ success: false, message: "User already has Premium plan" });
+      }
+
+      // Create PhonePe payment using the secure service
+      const redirectUrl = `${process.env.APP_BASE_URL || 'http://localhost:5000'}/billing?payment=success`;
+      const phonepeResponse = await PhonePeService.createPayment(
+        userId,
+        'Premium', // Plan name must match PHONEPE_PRICE_MAPPINGS
+        user.email || '',
+        redirectUrl
+      );
+
+      if (!phonepeResponse.success) {
+        throw new Error(phonepeResponse.message || 'Payment creation failed');
+      }
+
+      // Create UPI payment record for tracking
       const paymentData = {
         userId,
-        amount: 999, // ₹999 for Premium
+        amount: 99900, // Amount in paise (₹999)
         status: 'pending' as const,
-        notes: 'Upgrade to Premium plan'
+        notes: 'Upgrade to Premium plan via PhonePe',
+        paymentReference: phonepeResponse.data?.merchantTransactionId
       };
 
       const payment = await storage.createUpiPayment(paymentData);
 
-      // Return payment details with QR code info
+      // Return payment details with PhonePe URL
       res.json({
         success: true,
         payment: {
           id: payment.id,
           amount: payment.amount,
           status: payment.status,
+          merchantTransactionId: phonepeResponse.data?.merchantTransactionId,
+          paymentUrl: phonepeResponse.data?.instrumentResponse?.redirectInfo?.url,
           qrCode: {
-            // In a real implementation, you would generate actual UPI QR code data here
-            upiId: process.env.UPI_ID || "merchant@upi",
+            upiId: "phonepe@secure", // PhonePe handles the actual UPI details
             amount: payment.amount,
-            transactionNote: `Jobr Premium Plan - ${payment.id}`,
-            merchantCode: "JOBR999"
+            transactionNote: `Jobr Premium Plan - ${phonepeResponse.data?.merchantTransactionId}`,
+            merchantCode: "PHONEPE"
           }
         }
       });
     } catch (error) {
-      console.error("Error creating UPI payment:", error);
+      console.error("Error creating PhonePe payment:", error);
       res.status(500).json({ success: false, message: "Failed to create payment" });
     }
   });
@@ -2693,32 +2719,67 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/payments/upi/verify", isAuthenticated, async (req, res) => {
     try {
       const userId = (req as any).user.id;
-      const { paymentId, paymentReference } = req.body;
+      const { merchantTransactionId } = req.body;
       
-      if (!paymentId || !paymentReference) {
-        return res.status(400).json({ success: false, message: "Payment ID and reference are required" });
+      if (!merchantTransactionId) {
+        return res.status(400).json({ success: false, message: "Merchant transaction ID is required" });
       }
 
-      // Get user's UPI payments and find the specific one
+      // SECURITY: Use PhonePe API to verify payment status (never trust client input)
+      const statusResponse = await PhonePeService.checkPaymentStatus(merchantTransactionId);
+      
+      if (!statusResponse.success) {
+        console.error('PhonePe status check failed:', statusResponse.message);
+        return res.status(400).json({ 
+          success: false, 
+          message: "Payment verification failed. Please try again later." 
+        });
+      }
+
+      const { data } = statusResponse;
+      if (!data) {
+        return res.status(400).json({ 
+          success: false, 
+          message: "No payment data returned from PhonePe" 
+        });
+      }
+
+      // Verify payment is completed and successful
+      if (data.state !== 'COMPLETED' || data.responseCode !== 'SUCCESS') {
+        return res.status(400).json({ 
+          success: false, 
+          message: `Payment not completed. Status: ${data.state}, Code: ${data.responseCode}` 
+        });
+      }
+
+      // Verify the transaction belongs to this user by checking our payment record
       const userPayments = await storage.getUserUpiPayments(userId);
-      const payment = userPayments.find(p => p.id === paymentId);
+      const payment = userPayments.find(p => p.paymentReference === merchantTransactionId);
       
       if (!payment) {
-        return res.status(404).json({ success: false, message: "Payment not found" });
+        return res.status(404).json({ 
+          success: false, 
+          message: "Payment record not found for this user" 
+        });
       }
 
       if (payment.status === 'completed') {
-        return res.status(400).json({ success: false, message: "Payment already completed" });
+        return res.status(400).json({ 
+          success: false, 
+          message: "Payment already processed" 
+        });
       }
 
       // Update payment status to completed
-      await storage.updateUpiPaymentStatus(paymentId, 'completed', paymentReference);
+      await storage.updateUpiPaymentStatus(payment.id, 'completed', merchantTransactionId);
       
-      // Upgrade user to Premium plan
+      // Upgrade user to Premium plan (secured by PhonePe verification)
       const nextPeriodEnd = new Date();
       nextPeriodEnd.setMonth(nextPeriodEnd.getMonth() + 1); // One month from now
       
       await storage.updateUserPlan(userId, 'Premium', 'active', nextPeriodEnd);
+
+      console.log(`[SECURITY] Payment verified via PhonePe API for user ${userId}, transaction: ${merchantTransactionId}`);
 
       res.json({
         success: true,

@@ -30,6 +30,8 @@ interface UpiPayment {
   id: string
   amount: number
   status: 'pending' | 'completed' | 'failed'
+  merchantTransactionId?: string
+  paymentUrl?: string
   qrCode: {
     upiId: string
     amount: number
@@ -50,7 +52,7 @@ export default function Billing() {
   })
 
   const [currentPayment, setCurrentPayment] = useState<UpiPayment | null>(null)
-  const [paymentReference, setPaymentReference] = useState('')
+  const [merchantTransactionId, setMerchantTransactionId] = useState('')
 
   // Create UPI payment mutation
   const createPaymentMutation = useMutation({
@@ -79,17 +81,16 @@ export default function Billing() {
     }
   })
 
-  // Verify payment mutation
+  // Verify payment mutation using secure PhonePe verification
   const verifyPaymentMutation = useMutation({
     mutationFn: async () => {
-      if (!currentPayment || !paymentReference.trim()) {
-        throw new Error('Payment reference is required')
+      if (!currentPayment?.merchantTransactionId || !merchantTransactionId.trim()) {
+        throw new Error('Merchant transaction ID is required')
       }
       const response = await apiRequest('/api/payments/upi/verify', {
         method: 'POST',
         body: JSON.stringify({ 
-          paymentId: currentPayment.id, 
-          paymentReference: paymentReference.trim()
+          merchantTransactionId: merchantTransactionId.trim()
         }),
         headers: { 'Content-Type': 'application/json' }
       })
@@ -102,7 +103,7 @@ export default function Billing() {
       queryClient.invalidateQueries({ queryKey: ['/api/subscription/usage'] })
       
       setCurrentPayment(null)
-      setPaymentReference('')
+      setMerchantTransactionId('')
       
       toast({
         title: "Payment Verified!",
@@ -112,7 +113,7 @@ export default function Billing() {
     onError: (error) => {
       toast({
         title: "Verification Failed",
-        description: error.message || "Please check your payment reference and try again.",
+        description: error.message || "Please check your transaction ID and try again.",
         variant: "destructive",
       })
     }
@@ -120,7 +121,7 @@ export default function Billing() {
 
   const handleCancelPayment = () => {
     setCurrentPayment(null)
-    setPaymentReference('')
+    setMerchantTransactionId('')
   }
 
   const getPlanFeatures = (plan: string) => {
@@ -228,17 +229,17 @@ export default function Billing() {
                       
                       <div className="space-y-3">
                         <div>
-                          <label className="text-sm font-medium">Payment Reference/UTR Number</label>
+                          <label className="text-sm font-medium">Merchant Transaction ID</label>
                           <input
                             type="text"
-                            value={paymentReference}
-                            onChange={(e) => setPaymentReference(e.target.value)}
-                            placeholder="Enter UTR or transaction reference"
+                            value={merchantTransactionId}
+                            onChange={(e) => setMerchantTransactionId(e.target.value)}
+                            placeholder="Enter PhonePe transaction ID"
                             className="w-full mt-1 px-3 py-2 border rounded-md"
-                            data-testid="input-payment-reference"
+                            data-testid="input-merchant-transaction-id"
                           />
                           <p className="text-xs text-muted-foreground mt-1">
-                            Enter the reference number from your UPI app after payment
+                            Enter the transaction ID from PhonePe confirmation (starts with TXN_)
                           </p>
                         </div>
                         
@@ -253,7 +254,7 @@ export default function Billing() {
                           </Button>
                           <Button 
                             onClick={() => verifyPaymentMutation.mutate()}
-                            disabled={verifyPaymentMutation.isPending || !paymentReference.trim()}
+                            disabled={verifyPaymentMutation.isPending || !merchantTransactionId.trim()}
                             data-testid="button-verify-payment"
                             className="flex-1"
                           >
