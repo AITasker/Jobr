@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useAuth } from '@/hooks/useAuth'
 import { useLocation } from 'wouter'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -53,37 +53,32 @@ export default function Billing() {
     enabled: isAuthenticated,
   })
 
-  // Redirect new users to plan selection
-  // Handle both successful response indicating new user AND 404 error for unsynced users
-  if (usageStats && usageStats.currentPlan === 'Free' && usageStats.cvDownloadsThisMonth === 0) {
-    setLocation('/plan-selection')
-    return null
-  }
-  
-  // If there's a 404 error, this likely means user isn't synced yet (new user)
-  if (error && error.message.includes('404')) {
-    setLocation('/plan-selection') 
-    return null
-  }
+  // Effect to redirect new users to plan selection
+  useEffect(() => {
+    // If there's a 404 error, this likely means user isn't synced yet (new user)
+    if (error && error.message.includes('404')) {
+      setRedirecting(true)
+      setLocation('/plan-selection')
+      return
+    }
+  }, [error, setLocation])
 
   const [currentPayment, setCurrentPayment] = useState<UpiPayment | null>(null)
   const [merchantTransactionId, setMerchantTransactionId] = useState('')
   const [couponCode, setCouponCode] = useState('')
   const [appliedCoupon, setAppliedCoupon] = useState<string | null>(null)
+  const [redirecting, setRedirecting] = useState(false)
 
   // Create UPI payment mutation
   const createPaymentMutation = useMutation({
     mutationFn: async () => {
-      const response = await apiRequest('/api/payments/upi/create', {
-        method: 'POST',
-        body: JSON.stringify({ 
-          plan: 'Premium',
-          couponCode: couponCode.trim() || undefined
-        }),
-        headers: { 'Content-Type': 'application/json' }
+      const response = await apiRequest('POST', '/api/payments/upi/create', {
+        plan: 'Premium',
+        couponCode: couponCode.trim() || undefined
       })
-      if (!response.success) throw new Error(response.message)
-      return response.payment
+      const data = await response.json()
+      if (!data.success) throw new Error(data.message)
+      return data.payment
     },
     onSuccess: (payment) => {
       setCurrentPayment(payment)
@@ -112,19 +107,16 @@ export default function Billing() {
       if (!currentPayment?.merchantTransactionId || !merchantTransactionId.trim()) {
         throw new Error('Merchant transaction ID is required')
       }
-      const response = await apiRequest('/api/payments/upi/verify', {
-        method: 'POST',
-        body: JSON.stringify({ 
-          merchantTransactionId: merchantTransactionId.trim()
-        }),
-        headers: { 'Content-Type': 'application/json' }
+      const response = await apiRequest('POST', '/api/payments/upi/verify', {
+        merchantTransactionId: merchantTransactionId.trim()
       })
-      if (!response.success) throw new Error(response.message)
-      return response
+      const data = await response.json()
+      if (!data.success) throw new Error(data.message)
+      return data
     },
     onSuccess: () => {
       // Invalidate cache to refresh user data and usage stats
-      queryClient.invalidateQueries({ queryKey: ['/api/auth/user'] })
+      queryClient.invalidateQueries({ queryKey: ['/api/auth/me'] })
       queryClient.invalidateQueries({ queryKey: ['/api/subscription/usage'] })
       
       setCurrentPayment(null)
@@ -180,7 +172,7 @@ export default function Billing() {
     return <div>Please log in to view billing information.</div>
   }
 
-  if (usageLoading) {
+  if (usageLoading || redirecting) {
     return (
       <div className="container mx-auto px-4 py-8">
         <div className="animate-pulse space-y-4">
