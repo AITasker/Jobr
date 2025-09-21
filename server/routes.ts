@@ -2675,10 +2675,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/subscription/activate-free", isAuthenticated, async (req, res) => {
     try {
       const userId = (req as any).user.claims.sub;
-      console.log("Activate-free: userId from claims:", userId);
-      console.log("Activate-free: authMethod:", (req as any).user.authMethod);
       let user = await storage.getUserById(userId);
-      console.log("Activate-free: user found:", !!user);
       
       // If user doesn't exist, create them automatically (for Replit auth users)
       if (!user && (req as any).user.authMethod === 'replit') {

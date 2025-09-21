@@ -133,7 +133,10 @@ export class PhonePeService {
         throw new Error(`Invalid plan: ${plan}`);
       }
 
-      const merchantTransactionId = `TXN_${userId}_${Date.now()}`;
+      // PhonePe requires merchantTransactionId to be max 38 chars
+      // Create a shorter unique ID using first 8 chars of userId + timestamp
+      const shortUserId = userId.replace(/-/g, '').substring(0, 8);
+      const merchantTransactionId = `TXN_${shortUserId}_${Date.now()}`.substring(0, 38);
       
       const paymentPayload = {
         merchantId: phonePeConfig.merchantId,
