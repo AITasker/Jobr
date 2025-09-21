@@ -2658,6 +2658,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/payments/upi/create", isAuthenticated, async (req, res) => {
     try {
       const userId = (req as any).user.id;
+      const { couponCode } = req.body;
       const user = await storage.getUserById(userId);
       
       if (!user) {
@@ -2669,13 +2670,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ success: false, message: "User already has Premium plan" });
       }
 
-      // Create PhonePe payment using the secure service
+      // Calculate payment amount with coupon discount
+      let finalAmount = PHONEPE_PRICE_MAPPINGS['Premium'];
+      let couponUsed = null;
+      let discountApplied = 0;
+
+      if (couponCode) {
+        const couponValidation = await storage.validateCoupon(couponCode, userId, 'Premium');
+        if (!couponValidation.valid) {
+          return res.status(400).json({ 
+            success: false, 
+            message: couponValidation.error || "Invalid coupon code" 
+          });
+        }
+
+        couponUsed = couponValidation.coupon!;
+        const originalAmount = finalAmount;
+        finalAmount = calculateDiscountedPrice(originalAmount, couponUsed.discountType, couponUsed.discountValue);
+        discountApplied = originalAmount - finalAmount;
+      }
+
+      // Create PhonePe payment using the secure service with discounted amount
       const redirectUrl = `${process.env.APP_BASE_URL || 'http://localhost:5000'}/billing?payment=success`;
       const phonepeResponse = await PhonePeService.createPayment(
         userId,
-        'Premium', // Plan name must match PHONEPE_PRICE_MAPPINGS
+        'Premium', // Plan name 
         user.email || '',
-        redirectUrl
+        redirectUrl,
+        finalAmount // Use discounted amount
       );
 
       if (!phonepeResponse.success) {
@@ -2685,9 +2707,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Create UPI payment record for tracking
       const paymentData = {
         userId,
-        amount: 99900, // Amount in paise (₹999)
+        amount: finalAmount, // Use discounted amount
         status: 'pending' as const,
-        notes: 'Upgrade to Premium plan via PhonePe',
+        notes: couponUsed 
+          ? `Upgrade to Premium plan via PhonePe (Coupon: ${couponCode}, Discount: ₹${discountApplied / 100})`
+          : 'Upgrade to Premium plan via PhonePe',
         paymentReference: phonepeResponse.data?.merchantTransactionId
       };
 
@@ -2752,17 +2776,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // CRITICAL: Verify amount matches expected Premium price to prevent fraud
-      const expectedAmount = PHONEPE_PRICE_MAPPINGS['Premium'];
-      if (data.amount !== expectedAmount) {
-        console.error(`[SECURITY] Amount mismatch for ${merchantTransactionId}: paid=${data.amount}, expected=${expectedAmount}`);
-        return res.status(400).json({ 
-          success: false, 
-          message: "Payment amount does not match Premium plan price" 
-        });
-      }
-
-      // Verify the transaction belongs to this user by checking our payment record
+      // Verify the transaction belongs to this user by checking our payment record first
       const userPayments = await storage.getUserUpiPayments(userId);
       const payment = userPayments.find(p => p.paymentReference === merchantTransactionId);
       
@@ -2770,6 +2784,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ 
           success: false, 
           message: "Payment record not found for this user" 
+        });
+      }
+
+      // CRITICAL: Verify amount matches the actual payment record (supports coupon discounts)
+      if (data.amount !== payment.amount) {
+        console.error(`[SECURITY] Amount mismatch for ${merchantTransactionId}: paid=${data.amount}, expected=${payment.amount}`);
+        return res.status(400).json({ 
+          success: false, 
+          message: "Payment amount does not match recorded payment amount" 
         });
       }
 
@@ -2782,6 +2805,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Update payment status to completed
       await storage.updateUpiPaymentStatus(payment.id, 'completed', merchantTransactionId);
+      
+      // Track coupon usage if this payment used a coupon
+      if (payment.notes?.includes('Coupon:')) {
+        try {
+          // Extract coupon code from payment notes (format: "Coupon: CODE, Discount: ₹XXX")
+          const couponMatch = payment.notes.match(/Coupon: ([^,]+)/);
+          if (couponMatch) {
+            const couponCode = couponMatch[1].trim();
+            const coupon = await storage.getCouponByCode(couponCode);
+            if (coupon) {
+              // Calculate discount applied (original amount - paid amount)
+              const originalAmount = PHONEPE_PRICE_MAPPINGS['Premium'];
+              const discountApplied = originalAmount - payment.amount;
+              
+              await storage.applyCoupon(coupon.id, userId, merchantTransactionId, discountApplied);
+              console.log(`[COUPON] Applied coupon ${couponCode} for user ${userId}, discount: ₹${discountApplied / 100}`);
+            }
+          }
+        } catch (error) {
+          console.error('Error tracking coupon usage:', error);
+          // Don't fail the payment if coupon tracking fails
+        }
+      }
       
       // Upgrade user to Premium plan (secured by PhonePe verification)
       const nextPeriodEnd = new Date();

@@ -74,6 +74,11 @@ async function upsertUser(
     firstName: claims["first_name"],
     lastName: claims["last_name"],
     profileImageUrl: claims["profile_image_url"],
+    plan: "Free",
+    subscriptionStatus: "active",
+    cvDownloadsThisMonth: 0,
+    cvDownloadsRemaining: 2,
+    apiCallsToday: 0,
   });
 }
 

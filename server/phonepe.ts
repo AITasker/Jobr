@@ -34,6 +34,19 @@ export const PHONEPE_PRICE_MAPPINGS: Record<string, number> = {
   "Premium": 99900, // ₹999 for Premium plan
 };
 
+// Helper function to calculate discounted price
+export function calculateDiscountedPrice(originalPrice: number, discountType: string, discountValue: number): number {
+  if (discountType === 'fixed') {
+    // Discount value is in rupees, convert to paise
+    const discountInPaise = discountValue * 100;
+    return Math.max(0, originalPrice - discountInPaise);
+  } else if (discountType === 'percentage') {
+    const discountAmount = Math.floor((originalPrice * discountValue) / 100);
+    return Math.max(0, originalPrice - discountAmount);
+  }
+  return originalPrice;
+}
+
 interface PaymentRequest {
   merchantTransactionId: string;
   merchantUserId: string;
