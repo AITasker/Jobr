@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useToast } from '@/hooks/use-toast'
-import { QrCode, Download, Zap, Check, Crown, Loader2 } from 'lucide-react'
+import { QrCode, Download, Zap, Check, Crown, Loader2, ArrowLeft } from 'lucide-react'
 import { apiRequest } from '@/lib/queryClient'
 
 interface UpiPayment {
@@ -185,6 +185,18 @@ export default function PlanSelection() {
 
   return (
     <div className="container mx-auto px-4 py-8 max-w-4xl">
+      <div className="flex justify-between items-center mb-6">
+        <Button 
+          variant="ghost" 
+          onClick={() => setLocation('/dashboard')}
+          className="flex items-center gap-2"
+          data-testid="button-continue-dashboard"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Continue to Dashboard
+        </Button>
+      </div>
+      
       <div className="text-center mb-8">
         <h1 className="text-4xl font-bold text-foreground mb-4">Choose Your Plan</h1>
         <p className="text-muted-foreground text-lg">
