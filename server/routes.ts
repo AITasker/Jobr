@@ -21,7 +21,7 @@ import { EmailMonitoringService } from "./emailMonitoringService";
 import { ApplicationLifecycleService } from "./applicationLifecycleService";
 import { NotificationService } from "./notificationService";
 import { AnalyticsService } from "./analyticsService";
-import { PhonePeService } from "./phonepe";
+import { PhonePeService, PHONEPE_PRICE_MAPPINGS } from "./phonepe";
 import { registerSchema, loginSchema, insertJobSchema, insertApplicationSchema, phoneRequestSchema, phoneVerifySchema, jobApplySchema, cvTailorSchema, applicationUpdateSchema, batchPrepareSchema, bookmarkJobSchema, jobSearchSchema, saveSearchSchema, updatePreferencesSchema } from "@shared/schema";
 import { checkDatabaseHealth } from "./db";
 import { createErrorResponse, ERROR_CODES } from "./utils/errorHandler";
@@ -2749,6 +2749,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ 
           success: false, 
           message: `Payment not completed. Status: ${data.state}, Code: ${data.responseCode}` 
+        });
+      }
+
+      // CRITICAL: Verify amount matches expected Premium price to prevent fraud
+      const expectedAmount = PHONEPE_PRICE_MAPPINGS['Premium'];
+      if (data.amount !== expectedAmount) {
+        console.error(`[SECURITY] Amount mismatch for ${merchantTransactionId}: paid=${data.amount}, expected=${expectedAmount}`);
+        return res.status(400).json({ 
+          success: false, 
+          message: "Payment amount does not match Premium plan price" 
         });
       }
 
