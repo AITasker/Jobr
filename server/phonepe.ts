@@ -111,7 +111,7 @@ export class PhonePeService {
           message: 'Payment initiated via mock service',
           data: {
             merchantId: 'MOCK_MERCHANT',
-            merchantTransactionId: `MOCK_TXN_${userId}_${Date.now()}`,
+            merchantTransactionId: `MOCK_${userId.replace(/-/g, '').substring(0, 8)}_${Date.now()}`.substring(0, 38),
             instrumentResponse: {
               type: 'PAY_PAGE',
               redirectInfo: {
