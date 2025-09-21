@@ -7,6 +7,7 @@ import { Progress } from '@/components/ui/progress'
 import { useQuery } from '@tanstack/react-query'
 import { useToast } from '@/hooks/use-toast'
 import { CreditCard, Calendar, Users, Zap, BarChart3, MessageSquare, Crown } from 'lucide-react'
+import PayPalButton from '@/components/PayPalButton'
 
 interface UserData {
   id: string
@@ -37,12 +38,36 @@ export default function Billing() {
     enabled: isAuthenticated,
   })
 
-  const handleUpgrade = (plan: string) => {
+  const [showPayPal, setShowPayPal] = useState<string | null>(null)
+
+  const getPlanPrice = (plan: string) => {
+    switch (plan) {
+      case 'Premium':
+        return { amount: '499', currency: 'INR', priceDisplay: '₹499/month' }
+      case 'Pro':
+        return { amount: '999', currency: 'INR', priceDisplay: '₹999/month' }
+      default:
+        return { amount: '0', currency: 'INR', priceDisplay: 'Free' }
+    }
+  }
+
+  const handlePaymentSuccess = (plan: string) => {
     toast({
-      title: "Upgrade Coming Soon",
-      description: "Payment integration is being updated. Please check back soon.",
+      title: "Payment Successful!",
+      description: `You have successfully upgraded to ${plan}. Your new features will be available shortly.`,
       variant: "default",
     })
+    // In a real app, you would update the user's subscription status
+    setShowPayPal(null)
+  }
+
+  const handlePaymentError = () => {
+    toast({
+      title: "Payment Failed",
+      description: "There was an issue processing your payment. Please try again.",
+      variant: "destructive",
+    })
+    setShowPayPal(null)
   }
 
   const getPlanFeatures = (plan: string) => {
@@ -133,49 +158,99 @@ export default function Billing() {
           </div>
 
           {/* Action Buttons */}
-          <div className="flex gap-2">
+          <div className="space-y-4">
             {currentPlan === 'Free' && (
-              <>
-                <Button 
-                  onClick={() => handleUpgrade('Premium')}
-                  data-testid="button-upgrade-premium"
-                >
-                  Upgrade to Premium (₹499/month)
-                </Button>
-                <Button 
-                  variant="outline"
-                  onClick={() => handleUpgrade('Pro')}
-                  data-testid="button-upgrade-pro"
-                >
-                  Upgrade to Pro (₹999/month)
-                </Button>
-              </>
+              <div className="grid gap-4">
+                <div className="space-y-2">
+                  <h4 className="font-medium">Upgrade to Premium (₹499/month)</h4>
+                  {showPayPal === 'Premium' ? (
+                    <div className="flex gap-2 items-center">
+                      <PayPalButton 
+                        amount={getPlanPrice('Premium').amount}
+                        currency={getPlanPrice('Premium').currency}
+                        intent="capture"
+                      />
+                      <Button 
+                        variant="outline" 
+                        onClick={() => setShowPayPal(null)}
+                        data-testid="button-cancel-payment"
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  ) : (
+                    <Button 
+                      onClick={() => setShowPayPal('Premium')}
+                      data-testid="button-upgrade-premium"
+                    >
+                      Pay with PayPal - ₹499/month
+                    </Button>
+                  )}
+                </div>
+                
+                <div className="space-y-2">
+                  <h4 className="font-medium">Upgrade to Pro (₹999/month)</h4>
+                  {showPayPal === 'Pro' ? (
+                    <div className="flex gap-2 items-center">
+                      <PayPalButton 
+                        amount={getPlanPrice('Pro').amount}
+                        currency={getPlanPrice('Pro').currency}
+                        intent="capture"
+                      />
+                      <Button 
+                        variant="outline" 
+                        onClick={() => setShowPayPal(null)}
+                        data-testid="button-cancel-payment"
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  ) : (
+                    <Button 
+                      variant="outline"
+                      onClick={() => setShowPayPal('Pro')}
+                      data-testid="button-upgrade-pro"
+                    >
+                      Pay with PayPal - ₹999/month
+                    </Button>
+                  )}
+                </div>
+              </div>
             )}
+            
             {currentPlan === 'Premium' && (
-              <>
-                <Button 
-                  onClick={() => handleUpgrade('Pro')}
-                  data-testid="button-upgrade-pro"
-                >
-                  Upgrade to Pro (₹999/month)
-                </Button>
-                <Button 
-                  variant="outline"
-                  disabled
-                  data-testid="button-cancel-subscription"
-                >
-                  Payment Integration Coming Soon
-                </Button>
-              </>
+              <div className="space-y-2">
+                <h4 className="font-medium">Upgrade to Pro (₹999/month)</h4>
+                {showPayPal === 'Pro' ? (
+                  <div className="flex gap-2 items-center">
+                    <PayPalButton 
+                      amount={getPlanPrice('Pro').amount}
+                      currency={getPlanPrice('Pro').currency}
+                      intent="capture"
+                    />
+                    <Button 
+                      variant="outline" 
+                      onClick={() => setShowPayPal(null)}
+                      data-testid="button-cancel-payment"
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                ) : (
+                  <Button 
+                    onClick={() => setShowPayPal('Pro')}
+                    data-testid="button-upgrade-pro"
+                  >
+                    Pay with PayPal - ₹999/month
+                  </Button>
+                )}
+              </div>
             )}
+            
             {currentPlan === 'Pro' && (
-              <Button 
-                variant="outline"
-                disabled
-                data-testid="button-cancel-subscription"
-              >
-                Payment Integration Coming Soon
-              </Button>
+              <div className="text-center p-4 bg-muted rounded-lg">
+                <p className="text-muted-foreground">You're on the highest tier! Enjoying all premium features.</p>
+              </div>
             )}
           </div>
         </CardContent>

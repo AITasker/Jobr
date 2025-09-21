@@ -43,12 +43,12 @@ if (hasPayPalCredentials) {
                     ? Environment.Production
                     : Environment.Sandbox,
     logging: {
-      logLevel: LogLevel.Info,
+      logLevel: process.env.NODE_ENV === "production" ? LogLevel.Error : LogLevel.Warn,
       logRequest: {
-        logBody: true,
+        logBody: false, // Never log request bodies - security risk
       },
       logResponse: {
-        logHeaders: true,
+        logHeaders: false, // Never log response headers - security risk
       },
     },
   });
@@ -82,31 +82,46 @@ export async function getClientToken() {
 
 export async function createPaypalOrder(req: Request, res: Response) {
   try {
-    const { amount, currency, intent } = req.body;
+    const { plan, amount, currency, intent } = req.body;
 
-    if (!amount || isNaN(parseFloat(amount)) || parseFloat(amount) <= 0) {
+    // Server-authoritative pricing - prefer plan-based pricing for security
+    const planPricing: { [key: string]: { amount: string; currency: string } } = {
+      'Premium': { amount: '499.00', currency: 'INR' },
+      'Pro': { amount: '999.00', currency: 'INR' }
+    };
+
+    let finalAmount: string;
+    let finalCurrency: string;
+    let finalIntent: string;
+
+    if (plan && planPricing[plan]) {
+      // New secure method: use server-authoritative pricing
+      finalAmount = planPricing[plan].amount;
+      finalCurrency = planPricing[plan].currency;
+      finalIntent = 'capture';
+    } else if (amount && currency && intent) {
+      // Legacy method: validate client values against allowed amounts
+      const allowedAmounts = ['499', '499.00', '999', '999.00'];
+      const allowedCurrency = 'INR';
+      
+      if (!allowedAmounts.includes(amount) || currency !== allowedCurrency) {
+        return res
+          .status(400)
+          .json({ error: "Invalid payment amount or currency. Only Premium (₹499) and Pro (₹999) plans are allowed." });
+      }
+      
+      finalAmount = parseFloat(amount).toFixed(2);
+      finalCurrency = currency;
+      finalIntent = intent;
+    } else {
       return res
         .status(400)
-        .json({
-          error: "Invalid amount. Amount must be a positive number.",
-        });
-    }
-
-    if (!currency) {
-      return res
-        .status(400)
-        .json({ error: "Invalid currency. Currency is required." });
-    }
-
-    if (!intent) {
-      return res
-        .status(400)
-        .json({ error: "Invalid intent. Intent is required." });
+        .json({ error: "Invalid request. Provide either 'plan' (Premium/Pro) or valid 'amount', 'currency', and 'intent'." });
     }
 
     // Mock response when PayPal credentials are not configured
     if (!hasPayPalCredentials) {
-      console.log(`PayPal: Mock order created - Amount: ${amount} ${currency}`);
+      console.log(`PayPal: Mock order created - Amount: ${finalAmount} ${finalCurrency}`);
       const mockOrderResponse = {
         id: `mock_order_${Date.now()}`,
         status: "CREATED",
@@ -121,12 +136,12 @@ export async function createPaypalOrder(req: Request, res: Response) {
 
     const collect = {
       body: {
-        intent: intent,
+        intent: finalIntent,
         purchaseUnits: [
           {
             amount: {
-              currencyCode: currency,
-              value: amount,
+              currencyCode: finalCurrency,
+              value: finalAmount,
             },
           },
         ],
@@ -154,6 +169,7 @@ export async function capturePaypalOrder(req: Request, res: Response) {
     // Mock response when PayPal credentials are not configured
     if (!hasPayPalCredentials) {
       console.log(`PayPal: Mock order captured - OrderID: ${orderID}`);
+      // Use realistic mock response with INR currency
       const mockCaptureResponse = {
         id: orderID,
         status: "COMPLETED",
@@ -167,8 +183,8 @@ export async function capturePaypalOrder(req: Request, res: Response) {
               id: `mock_capture_${Date.now()}`,
               status: "COMPLETED",
               amount: {
-                currency_code: "USD",
-                value: "10.00"
+                currency_code: "INR",
+                value: "499.00" // Default to Premium price for mock
               }
             }]
           }
