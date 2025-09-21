@@ -4,6 +4,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { User, Bell } from 'lucide-react'
 import jobrLogo from '@assets/2025-removebg-preview_1758092942885.png'
 import { Badge } from '@/components/ui/badge'
+import { Link } from 'wouter'
 
 interface HeaderProps {
   showAuth?: boolean
@@ -37,9 +38,13 @@ export function Header({ showAuth = true }: HeaderProps) {
       <div className="container mx-auto px-4 py-3">
         <div className="flex items-center justify-between">
           {/* Logo */}
-          <a href="/" className="flex items-center gap-3 hover:opacity-90 transition-opacity">
+          <Link 
+            href={isAuthenticated ? "/dashboard" : "/"} 
+            className="flex items-center gap-3 hover:opacity-90 transition-opacity"
+            data-testid="link-logo"
+          >
             <img src={jobrLogo} alt="Jobr Logo" className="h-32 w-auto" />
-          </a>
+          </Link>
 
           {/* Navigation */}
           <nav className="hidden md:flex items-center gap-6">
