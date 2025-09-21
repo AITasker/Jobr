@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useAuth } from '@/hooks/useAuth'
+import { useLocation } from 'wouter'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -44,12 +45,26 @@ export default function Billing() {
   const { user, isAuthenticated } = useAuth()
   const { toast } = useToast()
   const queryClient = useQueryClient()
+  const [, setLocation] = useLocation()
 
   // Fetch usage statistics from subscription service
-  const { data: usageStats, isLoading: usageLoading } = useQuery<UsageStats>({
+  const { data: usageStats, isLoading: usageLoading, error } = useQuery<UsageStats>({
     queryKey: ['/api/subscription/usage'],
     enabled: isAuthenticated,
   })
+
+  // Redirect new users to plan selection
+  // Handle both successful response indicating new user AND 404 error for unsynced users
+  if (usageStats && usageStats.currentPlan === 'Free' && usageStats.cvDownloadsThisMonth === 0) {
+    setLocation('/plan-selection')
+    return null
+  }
+  
+  // If there's a 404 error, this likely means user isn't synced yet (new user)
+  if (error && error.message.includes('404')) {
+    setLocation('/plan-selection') 
+    return null
+  }
 
   const [currentPayment, setCurrentPayment] = useState<UpiPayment | null>(null)
   const [merchantTransactionId, setMerchantTransactionId] = useState('')
