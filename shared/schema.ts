@@ -799,3 +799,57 @@ export type InsertEmployerInteraction = z.infer<typeof insertEmployerInteraction
 export type EmployerInteraction = typeof employerInteractions.$inferSelect;
 export type InsertApplicationAnalytics = z.infer<typeof insertApplicationAnalyticsSchema>;
 export type ApplicationAnalytics = typeof applicationAnalytics.$inferSelect;
+
+// Coupon system for marketing campaigns
+export const coupons = pgTable("coupons", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  code: varchar("code").notNull().unique(), // e.g., "SAVE500"
+  description: text("description"), // e.g., "₹500 off first month"
+  discountType: varchar("discount_type").notNull(), // "fixed" or "percentage"
+  discountValue: integer("discount_value").notNull(), // 500 for ₹500 off, or 20 for 20%
+  maxUses: integer("max_uses"), // null for unlimited
+  currentUses: integer("current_uses").default(0).notNull(),
+  validFrom: timestamp("valid_from").defaultNow(),
+  validUntil: timestamp("valid_until"),
+  applicablePlans: text("applicable_plans").array().default([]).notNull(), // ["Premium"]
+  oneTimePerUser: boolean("one_time_per_user").default(true).notNull(),
+  isActive: boolean("is_active").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_coupons_code").on(table.code),
+  index("idx_coupons_active").on(table.isActive),
+]);
+
+// Track coupon usage by users
+export const couponUsages = pgTable("coupon_usages", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  couponId: varchar("coupon_id").notNull().references(() => coupons.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  usedAt: timestamp("used_at").defaultNow(),
+  paymentReference: varchar("payment_reference"), // Link to payment
+  discountApplied: integer("discount_applied").notNull(), // Actual discount amount in paise
+}, (table) => [
+  index("idx_coupon_usages_user").on(table.userId),
+  index("idx_coupon_usages_coupon").on(table.couponId),
+  unique("unique_user_coupon").on(table.userId, table.couponId), // Ensure one-time use per user
+]);
+
+// Coupon validation and insert schemas
+export const insertCouponSchema = createInsertSchema(coupons).omit({
+  id: true,
+  currentUses: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertCouponUsageSchema = createInsertSchema(couponUsages).omit({
+  id: true,
+  usedAt: true,
+});
+
+// Types for coupon system
+export type InsertCoupon = z.infer<typeof insertCouponSchema>;
+export type Coupon = typeof coupons.$inferSelect;
+export type InsertCouponUsage = z.infer<typeof insertCouponUsageSchema>;
+export type CouponUsage = typeof couponUsages.$inferSelect;

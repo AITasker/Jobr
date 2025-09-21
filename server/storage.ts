@@ -19,6 +19,8 @@ import {
   applicationNotifications,
   employerInteractions,
   applicationAnalytics,
+  coupons,
+  couponUsages,
   type User,
   type UpsertUser,
   type Cv,
@@ -59,7 +61,11 @@ import {
   type EmployerInteraction,
   type InsertEmployerInteraction,
   type ApplicationAnalytics,
-  type InsertApplicationAnalytics
+  type InsertApplicationAnalytics,
+  type Coupon,
+  type InsertCoupon,
+  type CouponUsage,
+  type InsertCouponUsage
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, sql, or, gte, ilike } from "drizzle-orm";
@@ -187,6 +193,14 @@ export interface IStorage {
   updateJobAlert(id: string, updates: Partial<JobAlert>): Promise<JobAlert>;
   deleteJobAlert(id: string): Promise<void>;
   getActiveJobAlerts(): Promise<JobAlert[]>;
+  
+  // Coupon operations
+  createCoupon(coupon: InsertCoupon): Promise<Coupon>;
+  getCouponByCode(code: string): Promise<Coupon | undefined>;
+  validateCoupon(code: string, userId: string, plan: string): Promise<{ valid: boolean; coupon?: Coupon; error?: string }>;
+  applyCoupon(couponId: string, userId: string, paymentReference: string, discountApplied: number): Promise<CouponUsage>;
+  getCouponUsagesByUserId(userId: string): Promise<CouponUsage[]>;
+  updateCouponUsage(couponId: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1023,6 +1037,96 @@ export class DatabaseStorage implements IStorage {
     .innerJoin(jobs, eq(applications.jobId, jobs.id))
     .where(ilike(jobs.company, `%${domain}%`))
     .orderBy(desc(applications.appliedDate));
+  }
+
+  // Coupon operations
+  async createCoupon(couponData: InsertCoupon): Promise<Coupon> {
+    const [coupon] = await db.insert(coupons).values(couponData).returning();
+    return coupon;
+  }
+
+  async getCouponByCode(code: string): Promise<Coupon | undefined> {
+    const [coupon] = await db.select()
+      .from(coupons)
+      .where(and(eq(coupons.code, code), eq(coupons.isActive, true)));
+    return coupon;
+  }
+
+  async validateCoupon(code: string, userId: string, plan: string): Promise<{ valid: boolean; coupon?: Coupon; error?: string }> {
+    const coupon = await this.getCouponByCode(code);
+    
+    if (!coupon) {
+      return { valid: false, error: "Coupon code not found" };
+    }
+
+    // Check if coupon is still active
+    if (!coupon.isActive) {
+      return { valid: false, error: "Coupon code is no longer active" };
+    }
+
+    // Check validity dates
+    const now = new Date();
+    if (coupon.validFrom && now < coupon.validFrom) {
+      return { valid: false, error: "Coupon code is not yet valid" };
+    }
+    if (coupon.validUntil && now > coupon.validUntil) {
+      return { valid: false, error: "Coupon code has expired" };
+    }
+
+    // Check if plan is applicable
+    if (coupon.applicablePlans.length > 0 && !coupon.applicablePlans.includes(plan)) {
+      return { valid: false, error: "Coupon code is not applicable to this plan" };
+    }
+
+    // Check usage limits
+    if (coupon.maxUses && coupon.currentUses >= coupon.maxUses) {
+      return { valid: false, error: "Coupon code has reached its usage limit" };
+    }
+
+    // Check if user has already used this coupon (for one-time use)
+    if (coupon.oneTimePerUser) {
+      const existingUsage = await db.select()
+        .from(couponUsages)
+        .where(and(eq(couponUsages.couponId, coupon.id), eq(couponUsages.userId, userId)))
+        .limit(1);
+      
+      if (existingUsage.length > 0) {
+        return { valid: false, error: "You have already used this coupon code" };
+      }
+    }
+
+    return { valid: true, coupon };
+  }
+
+  async applyCoupon(couponId: string, userId: string, paymentReference: string, discountApplied: number): Promise<CouponUsage> {
+    // Create coupon usage record
+    const [usage] = await db.insert(couponUsages).values({
+      couponId,
+      userId,
+      paymentReference,
+      discountApplied
+    }).returning();
+
+    // Increment coupon usage count
+    await this.updateCouponUsage(couponId);
+
+    return usage;
+  }
+
+  async getCouponUsagesByUserId(userId: string): Promise<CouponUsage[]> {
+    return await db.select()
+      .from(couponUsages)
+      .where(eq(couponUsages.userId, userId))
+      .orderBy(desc(couponUsages.usedAt));
+  }
+
+  async updateCouponUsage(couponId: string): Promise<void> {
+    await db.update(coupons)
+      .set({ 
+        currentUses: sql`${coupons.currentUses} + 1`,
+        updatedAt: new Date()
+      })
+      .where(eq(coupons.id, couponId));
   }
 }
 

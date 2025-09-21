@@ -53,13 +53,18 @@ export default function Billing() {
 
   const [currentPayment, setCurrentPayment] = useState<UpiPayment | null>(null)
   const [merchantTransactionId, setMerchantTransactionId] = useState('')
+  const [couponCode, setCouponCode] = useState('')
+  const [appliedCoupon, setAppliedCoupon] = useState<string | null>(null)
 
   // Create UPI payment mutation
   const createPaymentMutation = useMutation({
     mutationFn: async () => {
       const response = await apiRequest('/api/payments/upi/create', {
         method: 'POST',
-        body: JSON.stringify({ plan: 'Premium' }),
+        body: JSON.stringify({ 
+          plan: 'Premium',
+          couponCode: couponCode.trim() || undefined
+        }),
         headers: { 'Content-Type': 'application/json' }
       })
       if (!response.success) throw new Error(response.message)
@@ -67,9 +72,14 @@ export default function Billing() {
     },
     onSuccess: (payment) => {
       setCurrentPayment(payment)
+      if (couponCode.trim()) {
+        setAppliedCoupon(couponCode.trim())
+      }
       toast({
         title: "Payment Created",
-        description: "Please scan the QR code to complete payment.",
+        description: couponCode.trim() 
+          ? "Coupon applied! Please scan the QR code to complete payment."
+          : "Please scan the QR code to complete payment.",
       })
     },
     onError: (error) => {
@@ -122,6 +132,8 @@ export default function Billing() {
   const handleCancelPayment = () => {
     setCurrentPayment(null)
     setMerchantTransactionId('')
+    setCouponCode('')
+    setAppliedCoupon(null)
   }
 
   const getPlanFeatures = (plan: string) => {
@@ -209,6 +221,23 @@ export default function Billing() {
                 <div className="border rounded-lg p-4 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950 dark:to-indigo-950">
                   <h4 className="font-medium text-lg mb-2">Upgrade to Premium - ₹999/month</h4>
                   <p className="text-sm text-muted-foreground mb-4">Get unlimited access to all features</p>
+                  
+                  {!currentPayment && (
+                    <div className="mb-4">
+                      <label className="text-sm font-medium">Coupon Code (Optional)</label>
+                      <input
+                        type="text"
+                        value={couponCode}
+                        onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
+                        placeholder="Enter coupon code (e.g., SAVE500)"
+                        className="w-full mt-1 px-3 py-2 border rounded-md"
+                        data-testid="input-coupon-code"
+                      />
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Have a coupon code? Enter it here to get a discount!
+                      </p>
+                    </div>
+                  )}
                   
                   {currentPayment ? (
                     <div className="space-y-4">
