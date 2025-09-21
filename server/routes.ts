@@ -25,6 +25,7 @@ import { registerSchema, loginSchema, insertJobSchema, insertApplicationSchema, 
 import { checkDatabaseHealth } from "./db";
 import { createErrorResponse, ERROR_CODES } from "./utils/errorHandler";
 import { addAuthMetricsRoute } from "./authMetricsRoute";
+import { createPaypalOrder, capturePaypalOrder, loadPaypalDefault } from "./paypal";
 
 // Configure rate limiting for authentication routes (disabled in test mode)
 const loginRateLimit = rateLimit({
@@ -2615,6 +2616,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         message: "Failed to fetch analytics" 
       });
     }
+  });
+
+  // PayPal Integration Routes - Easy Payment Solution
+  app.get("/paypal/setup", async (req, res) => {
+    await loadPaypalDefault(req, res);
+  });
+
+  app.post("/paypal/order", async (req, res) => {
+    // Request body should contain: { intent, amount, currency }
+    await createPaypalOrder(req, res);
+  });
+
+  app.post("/paypal/order/:orderID/capture", async (req, res) => {
+    await capturePaypalOrder(req, res);
   });
 
   const httpServer = createServer(app);
