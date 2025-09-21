@@ -129,6 +129,7 @@ export interface IStorage {
   createUpiPayment(paymentData: InsertUpiPayment): Promise<UpiPayment>;
   updateUpiPaymentStatus(id: string, status: string, paymentReference?: string): Promise<UpiPayment>;
   getUserUpiPayments(userId: string): Promise<UpiPayment[]>;
+  getUpiPaymentById(id: string): Promise<UpiPayment | undefined>;
 
   // Enhanced Job Search operations
   getJobsWithFilters(filters: JobSearchFilters): Promise<Job[]>;
@@ -562,6 +563,14 @@ export class DatabaseStorage implements IStorage {
       .from(upiPayments)
       .where(eq(upiPayments.userId, userId))
       .orderBy(desc(upiPayments.createdAt));
+  }
+
+  async getUpiPaymentById(id: string): Promise<UpiPayment | undefined> {
+    const [payment] = await db
+      .select()
+      .from(upiPayments)
+      .where(eq(upiPayments.id, id));
+    return payment;
   }
 
   // Enhanced Job Search operations

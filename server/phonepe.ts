@@ -105,13 +105,30 @@ export class PhonePeService {
       // Use mock service in test mode
       if (this.isTestMode()) {
         console.log('💳 PhonePe Service: Using mock payment creation in test mode');
+        const mockMerchantTxnId = `MOCK_${userId.replace(/-/g, '').substring(0, 8)}_${Date.now()}`.substring(0, 38);
+        
+        // Store payment intent for tracking even in test mode
+        await storage.createUpiPayment({
+          id: mockMerchantTxnId,
+          userId,
+          amount,
+          status: 'pending',
+          paymentMethod: 'upi',
+          paymentReference: mockMerchantTxnId,
+          metadata: {
+            plan,
+            email: userEmail,
+            paymentPayload: null
+          }
+        });
+        
         return {
           success: true,
           code: 'PAYMENT_INITIATED',
           message: 'Payment initiated via mock service',
           data: {
             merchantId: 'MOCK_MERCHANT',
-            merchantTransactionId: `MOCK_${userId.replace(/-/g, '').substring(0, 8)}_${Date.now()}`.substring(0, 38),
+            merchantTransactionId: mockMerchantTxnId,
             instrumentResponse: {
               type: 'PAY_PAGE',
               redirectInfo: {
@@ -202,14 +219,15 @@ export class PhonePeService {
       }
 
       // Store payment intent for tracking
-      await storage.createStripeEvent({
-        eventId: merchantTransactionId,
-        eventType: 'payment.initiated',
-        processed: false,
+      await storage.createUpiPayment({
+        id: merchantTransactionId,
+        userId,
+        amount,
+        status: 'pending',
+        paymentMethod: 'upi',
+        paymentReference: merchantTransactionId,
         metadata: {
-          userId,
           plan,
-          amount,
           email: userEmail,
           paymentPayload
         }
@@ -464,8 +482,8 @@ export class PhonePeService {
       const { merchantTransactionId, transactionId, amount, state, responseCode } = webhookPayload;
 
       // Check if we already processed this transaction
-      const existingEvent = await storage.getStripeEventByEventId(merchantTransactionId);
-      if (existingEvent?.processed) {
+      const existingPayment = await storage.getUpiPaymentById(merchantTransactionId);
+      if (existingPayment?.status === 'completed') {
         console.log(`PhonePe transaction ${merchantTransactionId} already processed`);
         res.json({ received: true, status: 'already_processed' });
         return;
@@ -496,8 +514,8 @@ export class PhonePeService {
         await this.handleFailedPayment(merchantTransactionId, statusVerification.verifiedState || state, statusVerification.verifiedResponseCode || responseCode);
       }
 
-      // Mark event as processed
-      await storage.markStripeEventProcessed(merchantTransactionId);
+      // Mark payment as processed
+      await storage.updateUpiPaymentStatus(merchantTransactionId, 'completed', transactionId);
 
       res.json({ received: true, status: 'processed' });
     } catch (error) {
@@ -516,12 +534,13 @@ export class PhonePeService {
   ): Promise<void> {
     try {
       // Get the original payment request data
-      const eventRecord = await storage.getStripeEventByEventId(merchantTransactionId);
-      if (!eventRecord?.metadata) {
+      const paymentRecord = await storage.getUpiPaymentById(merchantTransactionId);
+      if (!paymentRecord?.metadata) {
         throw new Error('Payment event not found');
       }
 
-      const { userId, plan } = eventRecord.metadata as any;
+      const { plan } = paymentRecord.metadata as any;
+      const userId = paymentRecord.userId;
 
       // Update user plan and subscription status
       await storage.updateUserPlan(
@@ -569,10 +588,11 @@ export class PhonePeService {
     console.log(`PhonePe payment failed: ${merchantTransactionId}, state: ${state}, code: ${responseCode}`);
     
     // Optionally notify user or update records about failed payment
-    const eventRecord = await storage.getStripeEventByEventId(merchantTransactionId);
-    if (eventRecord?.metadata) {
-      const { userId } = eventRecord.metadata as any;
-      console.log(`Payment failed for user ${userId}`);
+    const paymentRecord = await storage.getUpiPaymentById(merchantTransactionId);
+    if (paymentRecord) {
+      console.log(`Payment failed for user ${paymentRecord.userId}`);
+      // Mark payment as failed
+      await storage.updateUpiPaymentStatus(merchantTransactionId, 'failed');
       // Could send email notification or update user record here
     }
   }
