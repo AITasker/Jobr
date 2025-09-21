@@ -31,8 +31,7 @@ if (process.env.PHONEPE_MERCHANT_ID && process.env.PHONEPE_SALT_KEY) {
 
 // Price mappings for plans (in paise - 1 rupee = 100 paise)
 export const PHONEPE_PRICE_MAPPINGS: Record<string, number> = {
-  "Premium": 49900, // ₹499
-  "Pro": 99900,     // ₹999
+  "Premium": 99900, // ₹999 for Premium plan
 };
 
 interface PaymentRequest {
