@@ -1,4 +1,5 @@
 import type { Request, Response } from "express";
+import sgMail from '@sendgrid/mail';
 
 // Initialize SendGrid
 let sendgrid: any = null;
