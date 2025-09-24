@@ -39,7 +39,8 @@ export default function PlanSelection() {
   // Activate free trial mutation
   const activateFreeMutation = useMutation({
     mutationFn: async () => {
-      const data = await apiRequest('POST', '/api/subscription/activate-free')
+      const response = await apiRequest('POST', '/api/subscription/activate-free')
+      const data = await response.json()
       if (!data.success) throw new Error(data.message)
       return data
     },
@@ -63,10 +64,11 @@ export default function PlanSelection() {
   // Create UPI payment mutation
   const createPaymentMutation = useMutation({
     mutationFn: async () => {
-      const data = await apiRequest('POST', '/api/payments/upi/create', {
+      const response = await apiRequest('POST', '/api/payments/upi/create', {
         plan: 'Premium',
         couponCode: couponCode.trim() || undefined
       })
+      const data = await response.json()
       if (!data.success) throw new Error(data.message)
       return data.payment
     },
