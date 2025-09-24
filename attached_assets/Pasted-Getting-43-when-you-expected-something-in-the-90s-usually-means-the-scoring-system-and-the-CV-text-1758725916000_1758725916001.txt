@@ -1,0 +1,76 @@
+Getting 43 % when you expected something in the 90s usually means the scoring system and the CV text aren’t lining up somewhere.
+Here are the most common reasons, mapped to your situation:
+
+1️⃣ Keyword Extraction Gaps
+
+Different word forms – your CV says “Program Management” but the job description says “Program Manager”.
+If your matcher only checks exact words, that’s a miss.
+
+Synonyms not recognised – e.g., “data-driven decision making” vs “analytical skills with Excel”.
+
+Multi-word phrases – if the JD requires “curriculum design” and you only have “academic program coordination,” a strict matcher won’t count it.
+
+2️⃣ Resume Parsing Problems
+
+PDFs with columns or bullets can scramble text order; a basic parser might drop or mangle sections.
+
+Hidden characters, ligatures, or fancy symbols can break keyword detection.
+
+3️⃣ Algorithm/Weighting Differences
+
+Maybe your app heavily weights “must-haves” and you’re missing a few critical ones it identified.
+
+If it assigns 80 % weight to “EdTech curriculum experience” and you describe it differently, the score plunges even though a human sees the match.
+
+4️⃣ Job-Description Processing
+
+If your JD-keyword extractor pulled very specific phrases like
+“curriculum design,” “content development,” “student progression,”
+and your CV never uses those exact words, the algorithm thinks you lack them.
+
+5️⃣ Edge Cases & Bugs
+
+Divide-by-zero or fallback logic might default to a low score if it thinks some sections are empty.
+
+Case-sensitivity or stop-word stripping might be too aggressive.
+
+🔧 Quick Diagnostics
+
+Print the extracted keyword sets (must-have & nice-to-have) that your app generated.
+
+Log the raw parsed resume text to check for missing sections.
+
+Compare matched vs missing keywords side-by-side.
+
+Example debug snippet:
+
+print("Must-have keywords:", must_have)
+print("Matched must-haves:", matched_must)
+print("Missing must-haves:", set(must_have) - set(matched_must))
+
+🛠 Fixes
+
+Improve matching:
+
+Lower-case everything.
+
+Use stemming/lemmatization (e.g., nltk, spaCy).
+
+Consider embeddings or a semantic search (OpenAI embeddings, cosine similarity).
+
+Upgrade parsing:
+
+Switch to pdfminer.six or pdfplumber if you’re not already.
+
+Test with a plain-text export of your CV.
+
+Tune weights:
+
+Revisit your must-have / nice-to-have ratios.
+
+Expose transparency:
+
+Always output which keywords were matched/missed so users can see why.
+
+Bottom line:
+The 43 % is almost certainly not because your resume is weak—it’s because the parser or keyword logic missed key matches. Start by printing the parsed resume text and the “missing” keyword list; you’ll see the gap immediately

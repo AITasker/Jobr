@@ -7,6 +7,8 @@ import { JDUpload } from '@/components/JDUpload'
 import { JobCard } from '@/components/JobCard'
 import { EnhancedCVDisplay } from '@/components/EnhancedCVDisplay'
 import { JobMatchSection } from '@/components/JobMatchSection'
+import { ATSScorer } from '@/components/ATSScorer'
+import { ATSScoreCalculator } from '@/components/ATSScoreCalculator'
 import { ApplicationTracker } from '@/components/ApplicationTracker'
 import { AddApplicationModal } from '@/components/AddApplicationModal'
 import { EditApplicationModal } from '@/components/EditApplicationModal'
@@ -154,6 +156,16 @@ export default function Dashboard() {
   const [isLoadingEnhancedMatches, setIsLoadingEnhancedMatches] = useState(false)
   const [showNewCVUpload, setShowNewCVUpload] = useState(false)
   const [showCompleteCVModal, setShowCompleteCVModal] = useState(false)
+
+  // ATS Score state for summary display
+  const [atsScore, setAtsScore] = useState<number | null>(null)
+  const [atsScoreLabel, setAtsScoreLabel] = useState('--% Baseline')
+
+  // Callback to update ATS score from ATSScorer component
+  const updateAtsScore = useCallback((score: number | null, label: string) => {
+    setAtsScore(score)
+    setAtsScoreLabel(label)
+  }, [])
 
   // All queries must be called before any conditional logic
   const { data: cvData, isLoading: cvLoading, error: cvError } = useQuery<CVResponse | null>({
@@ -969,7 +981,7 @@ Your CV Profile
                 </div>
                 <Card className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/30 dark:to-indigo-950/30 border-blue-200 dark:border-blue-800">
                   <CardContent className="p-4">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                       <div className="bg-white/70 dark:bg-gray-800/70 p-3 rounded-lg backdrop-blur-sm border border-white/40">
                         <div className="text-sm font-medium text-blue-800 dark:text-blue-200 mb-1 flex items-center gap-1"><Mail className="h-3 w-3" />Email</div>
                         <div className="text-sm text-muted-foreground truncate">{cvData?.parsedData?.email || 'Not specified'}</div>
@@ -982,7 +994,87 @@ Your CV Profile
                         <div className="text-sm font-medium text-blue-800 dark:text-blue-200 mb-1 flex items-center gap-1"><FileText className="h-3 w-3" />File</div>
                         <div className="text-sm text-muted-foreground truncate">{cvData?.fileName}</div>
                       </div>
+                      <div className="bg-white/70 dark:bg-gray-800/70 p-3 rounded-lg backdrop-blur-sm border border-white/40">
+                        <div className="text-sm font-medium text-blue-800 dark:text-blue-200 mb-1 flex items-center gap-1">
+                          <Brain className="h-3 w-3" />
+                          ATS Score
+                          <Dialog>
+                            <DialogTrigger asChild>
+                              <Button 
+                                size="icon" 
+                                variant="ghost" 
+                                className="h-4 w-4 ml-auto text-blue-600 hover:text-blue-800 hover:bg-blue-100"
+                                data-testid="button-ats-calculate"
+                              >
+                                <Plus className="h-3 w-3" />
+                              </Button>
+                            </DialogTrigger>
+                            <DialogContent className="sm:max-w-[600px]">
+                              <DialogHeader>
+                                <DialogTitle>Calculate ATS Score</DialogTitle>
+                                <DialogDescription>
+                                  Enter a job description to calculate how well your CV matches the requirements.
+                                </DialogDescription>
+                              </DialogHeader>
+                              <ATSScoreCalculator cvData={cvData} onScoreUpdate={updateAtsScore} />
+                            </DialogContent>
+                          </Dialog>
+                        </div>
+                        <div className="text-sm text-muted-foreground" data-testid="ats-score-summary">{atsScoreLabel}</div>
+                      </div>
                     </div>
+
+                    {/* Keywords and ATS Improvement Section */}
+                    <div className="mt-6 p-4 bg-blue-100/30 dark:bg-blue-900/20 rounded-lg border border-blue-200/60 dark:border-blue-800/60 backdrop-blur-sm">
+                      <h4 className="font-medium text-blue-900 dark:text-blue-100 mb-3 flex items-center gap-2">
+                        <Sparkles className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                        CV Keywords & ATS Suggestions
+                      </h4>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {/* Current Keywords */}
+                        <div className="space-y-2">
+                          <h5 className="text-sm font-medium text-blue-800 dark:text-blue-200">Your Current Keywords</h5>
+                          <div className="flex flex-wrap gap-1">
+                            {cvData?.skills?.slice(0, 8).map((skill, index) => (
+                              <Badge 
+                                key={index} 
+                                variant="secondary" 
+                                className="bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-900/40 dark:text-blue-300 dark:border-blue-700 text-xs"
+                              >
+                                {skill}
+                              </Badge>
+                            )) || (
+                              <p className="text-xs text-muted-foreground">Processing CV keywords...</p>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Suggested Improvements */}
+                        <div className="space-y-2">
+                          <h5 className="text-sm font-medium text-blue-800 dark:text-blue-200">Trending Keywords</h5>
+                          <div className="flex flex-wrap gap-1">
+                            {[
+                              'React', 'Node.js', 'TypeScript', 'Python', 'AWS', 'Docker',
+                              'Agile', 'REST API'
+                            ].map((keyword, index) => (
+                              <Badge 
+                                key={index} 
+                                variant="outline" 
+                                className="border-blue-300 text-blue-700 hover:bg-blue-100 dark:border-blue-600 dark:text-blue-300 dark:hover:bg-blue-900/30 cursor-pointer text-xs"
+                                data-testid={`keyword-suggestion-${index}`}
+                              >
+                                {keyword}
+                              </Badge>
+                            ))}
+                          </div>
+                          <p className="text-xs text-blue-600 dark:text-blue-400">
+                            Add these keywords if they match your experience
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
                     <div className="mt-4 flex items-center gap-2">
                       <Badge variant="outline" className="bg-blue-100 text-blue-800 border-blue-200">
 Processed
@@ -1041,32 +1133,32 @@ AI Job Analysis
                 
                 {/* Interactive Jobs Table */}
                 {matchedJobsData?.matches && matchedJobsData.matches.length > 0 && (
-                  <Card className="mt-6 bg-gradient-to-br from-indigo-50 to-blue-50 dark:from-indigo-950/30 dark:to-blue-950/30 border-indigo-200 dark:border-indigo-800">
+                  <Card className="mt-6 bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/30 dark:to-indigo-950/30 border-blue-200 dark:border-blue-800">
                     <CardContent className="p-6">
                       <div className="flex items-center gap-3 mb-6">
-                        <div className="bg-indigo-100 dark:bg-indigo-900 p-2 rounded-lg">
-                          <Briefcase className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
+                        <div className="bg-blue-100 dark:bg-blue-900 p-2 rounded-lg">
+                          <Briefcase className="h-5 w-5 text-blue-600 dark:text-blue-400" />
                         </div>
                         <div>
-                          <h3 className="font-semibold text-indigo-900 dark:text-indigo-100">Matched Jobs</h3>
-                          <p className="text-sm text-indigo-700 dark:text-indigo-300">Jobs that match your CV profile</p>
+                          <h3 className="font-semibold text-blue-900 dark:text-blue-100">Matched Jobs</h3>
+                          <p className="text-sm text-blue-700 dark:text-blue-300">Jobs that match your CV profile</p>
                         </div>
                       </div>
                       
                       <div className="overflow-x-auto">
                         <table className="w-full">
                           <thead>
-                            <tr className="border-b border-indigo-200 dark:border-indigo-800">
-                              <th className="text-left py-3 px-2 text-sm font-medium text-indigo-900 dark:text-indigo-100">Job Title</th>
-                              <th className="text-left py-3 px-2 text-sm font-medium text-indigo-900 dark:text-indigo-100">Company</th>
-                              <th className="text-left py-3 px-2 text-sm font-medium text-indigo-900 dark:text-indigo-100">Location</th>
-                              <th className="text-left py-3 px-2 text-sm font-medium text-indigo-900 dark:text-indigo-100">Match</th>
-                              <th className="text-left py-3 px-2 text-sm font-medium text-indigo-900 dark:text-indigo-100">Actions</th>
+                            <tr className="border-b border-blue-200 dark:border-blue-800">
+                              <th className="text-left py-3 px-2 text-sm font-medium text-blue-900 dark:text-blue-100">Job Title</th>
+                              <th className="text-left py-3 px-2 text-sm font-medium text-blue-900 dark:text-blue-100">Company</th>
+                              <th className="text-left py-3 px-2 text-sm font-medium text-blue-900 dark:text-blue-100">Location</th>
+                              <th className="text-left py-3 px-2 text-sm font-medium text-blue-900 dark:text-blue-100">Match</th>
+                              <th className="text-left py-3 px-2 text-sm font-medium text-blue-900 dark:text-blue-100">Actions</th>
                             </tr>
                           </thead>
                           <tbody>
                             {matchedJobsData.matches.map((match, index) => (
-                              <tr key={index} className="border-b border-indigo-100 dark:border-indigo-900 hover:bg-indigo-50 dark:hover:bg-indigo-950/50">
+                              <tr key={index} className="border-b border-blue-100 dark:border-blue-900 hover:bg-blue-50 dark:hover:bg-blue-950/50">
                                 <td className="py-3 px-2">
                                   <div className="font-medium text-foreground">{match.job.title}</div>
                                   <div className="text-sm text-muted-foreground truncate max-w-xs">{match.job.description?.substring(0, 100)}...</div>
@@ -1134,7 +1226,7 @@ AI Job Analysis
               <div data-testid="box-enhanced-cv">
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="text-xl font-semibold flex items-center gap-2">
-                    <span className="bg-primary text-primary-foreground rounded-full w-8 h-8 flex items-center justify-center text-sm font-bold">3</span>
+                    <span className="bg-gradient-to-br from-primary to-purple-600 text-primary-foreground rounded-full w-8 h-8 flex items-center justify-center text-sm font-bold shadow-lg">3</span>
                     Enhanced CV with Job Description
                   </h2>
                   <Button 
@@ -1142,16 +1234,21 @@ AI Job Analysis
                     size="sm"
                     onClick={() => handleDownloadEnhancedCV()}
                     data-testid="button-download-enhanced-cv"
+                    className="hover-elevate"
                   >
                     <FileText className="h-4 w-4 mr-2" />
                     Download Enhanced CV
                   </Button>
                 </div>
-                <EnhancedCVDisplay 
-                  cvData={cvData as any} 
-                  enhancedData={enhancedCvData}
-                  showEnhanced={true} 
-                />
+                <Card className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/30 dark:to-indigo-950/30 border-blue-200 dark:border-blue-800">
+                  <CardContent className="p-6">
+                    <EnhancedCVDisplay 
+                      cvData={cvData as any} 
+                      enhancedData={enhancedCvData}
+                      showEnhanced={true} 
+                    />
+                  </CardContent>
+                </Card>
               </div>
             )}
 
@@ -1201,7 +1298,7 @@ AI Job Analysis
                 <div className="absolute -top-2 -left-2 w-4 h-4 bg-gradient-to-br from-yellow-400 to-orange-500 rounded-full animate-pulse"></div>
                 <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
                   <span className="bg-gradient-to-br from-primary to-blue-600 text-primary-foreground rounded-full w-8 h-8 flex items-center justify-center text-sm font-bold shadow-lg">4</span>
-                  {jdIntegrated ? '✨ Enhanced Job Matches' : '🎯 Your Job Matches'}
+                  {jdIntegrated ? 'Enhanced Job Matches' : 'Your Job Matches'}
                 </h2>
                 <Card className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/30 dark:to-indigo-950/30 border-blue-200 dark:border-blue-800">
                   <CardHeader className="pb-4">
@@ -1707,6 +1804,7 @@ AI Job Analysis
                 </CardContent>
               </Card>
             )}
+
           </TabsContent>
 
           <TabsContent value="applications" className="space-y-6">
