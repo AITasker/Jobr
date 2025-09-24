@@ -22,7 +22,8 @@ import { ApplicationLifecycleService } from "./applicationLifecycleService";
 import { NotificationService } from "./notificationService";
 import { AnalyticsService } from "./analyticsService";
 import { PhonePeService, PHONEPE_PRICE_MAPPINGS } from "./phonepe";
-import { registerSchema, loginSchema, insertJobSchema, insertApplicationSchema, phoneRequestSchema, phoneVerifySchema, jobApplySchema, cvTailorSchema, applicationUpdateSchema, batchPrepareSchema, bookmarkJobSchema, jobSearchSchema, saveSearchSchema, updatePreferencesSchema } from "@shared/schema";
+import { ATSService } from "./atsService";
+import { registerSchema, loginSchema, insertJobSchema, insertApplicationSchema, phoneRequestSchema, phoneVerifySchema, jobApplySchema, cvTailorSchema, applicationUpdateSchema, batchPrepareSchema, bookmarkJobSchema, jobSearchSchema, saveSearchSchema, updatePreferencesSchema, atsScoreSchema } from "@shared/schema";
 import { checkDatabaseHealth } from "./db";
 import { createErrorResponse, ERROR_CODES } from "./utils/errorHandler";
 import { addAuthMetricsRoute } from "./authMetricsRoute";
@@ -3165,6 +3166,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error verifying payment:", error);
       res.status(500).json({ success: false, message: "Failed to verify payment" });
+    }
+  });
+
+  // ATS Score calculation endpoint for students
+  app.post('/api/ats/score', isAuthenticated, async (req: any, res: any) => {
+    try {
+      // Validate request body with Zod schema
+      const validationResult = atsScoreSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid request data",
+          errors: validationResult.error.errors
+        });
+      }
+
+      const { jobDescription, resumeText } = validationResult.data;
+
+      // Calculate ATS score using OpenAI
+      const atsResult = await ATSService.calculateATSScore(jobDescription, resumeText);
+
+      res.json({
+        success: true,
+        data: atsResult
+      });
+    } catch (error) {
+      console.error("ATS Score calculation error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Failed to calculate ATS score",
+        error: error instanceof Error ? error.message : "Unknown error"
+      });
     }
   });
 

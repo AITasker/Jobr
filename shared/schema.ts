@@ -786,10 +786,17 @@ export const updatePreferencesSchema = z.object({
   benefits: z.array(z.string()).optional(),
 });
 
+// ATS Score calculation schema for students
+export const atsScoreSchema = z.object({
+  jobDescription: z.string().min(1, "Job description is required"),
+  resumeText: z.string().min(1, "Resume text is required")
+});
+
 export type JobSearchFilters = z.infer<typeof jobSearchSchema>;
 export type SaveSearchData = z.infer<typeof saveSearchSchema>;
 export type BookmarkJobData = z.infer<typeof bookmarkJobSchema>;
 export type UpdatePreferencesData = z.infer<typeof updatePreferencesSchema>;
+export type ATSScoreData = z.infer<typeof atsScoreSchema>;
 
 // New comprehensive application tracking types
 export type InsertApplicationHistory = z.infer<typeof insertApplicationHistorySchema>;
