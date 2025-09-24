@@ -26,7 +26,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { apiRequest, queryClient } from '@/lib/queryClient'
 import { useToast } from '@/hooks/use-toast'
-import { Search, Filter, Briefcase, Target, FileText, Loader2, AlertCircle, Plus, RefreshCw, TrendingUp, MapPin, DollarSign, Clock, ChevronDown, Bookmark, History, Brain, X, Sparkles } from 'lucide-react'
+import { Search, Filter, Briefcase, Target, FileText, Loader2, AlertCircle, Plus, RefreshCw, TrendingUp, MapPin, DollarSign, Clock, ChevronDown, Bookmark, History, Brain, X, Sparkles, Mail } from 'lucide-react'
 import type { Application as DatabaseApplication, Job as DatabaseJob, Cv as DatabaseCv } from '@shared/schema'
 
 // Response interfaces aligned with backend API responses
@@ -596,26 +596,50 @@ export default function Dashboard() {
             
             {/* BOX 1: Uploaded CV */}
             {hasCvData && (
-              <div data-testid="box-uploaded-cv">
+              <div data-testid="box-uploaded-cv" className="relative">
+                <div className="absolute -top-1 -right-1 w-3 h-3 bg-gradient-to-br from-green-400 to-emerald-500 rounded-full animate-pulse"></div>
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="text-xl font-semibold flex items-center gap-2">
-                    <span className="bg-primary text-primary-foreground rounded-full w-8 h-8 flex items-center justify-center text-sm font-bold">1</span>
-                    Your Uploaded CV
+                    <span className="bg-gradient-to-br from-primary to-indigo-600 text-primary-foreground rounded-full w-8 h-8 flex items-center justify-center text-sm font-bold shadow-lg">1</span>
+Your CV Profile
                   </h2>
                   <Button 
                     variant="outline" 
                     size="sm"
                     onClick={() => setShowNewCVUpload(true)}
                     data-testid="button-upload-new-cv"
+                    className="hover-elevate"
                   >
                     <Plus className="h-4 w-4 mr-2" />
                     Upload New CV
                   </Button>
                 </div>
-                <EnhancedCVDisplay 
-                  cvData={cvData as any} 
-                  showEnhanced={false} 
-                />
+                <Card className="bg-gradient-to-br from-green-50 to-teal-50 dark:from-green-950/30 dark:to-teal-950/30 border-green-200 dark:border-green-800">
+                  <CardContent className="p-4">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div className="bg-white/70 dark:bg-gray-800/70 p-3 rounded-lg backdrop-blur-sm border border-white/40">
+                        <div className="text-sm font-medium text-green-800 dark:text-green-200 mb-1 flex items-center gap-1"><Mail className="h-3 w-3" />Email</div>
+                        <div className="text-sm text-muted-foreground truncate">{cvData?.parsedData?.email || 'Not specified'}</div>
+                      </div>
+                      <div className="bg-white/70 dark:bg-gray-800/70 p-3 rounded-lg backdrop-blur-sm border border-white/40">
+                        <div className="text-sm font-medium text-green-800 dark:text-green-200 mb-1 flex items-center gap-1"><Target className="h-3 w-3" />Skills</div>
+                        <div className="text-sm text-muted-foreground">{cvData?.skills?.length || 0} identified</div>
+                      </div>
+                      <div className="bg-white/70 dark:bg-gray-800/70 p-3 rounded-lg backdrop-blur-sm border border-white/40">
+                        <div className="text-sm font-medium text-green-800 dark:text-green-200 mb-1 flex items-center gap-1"><FileText className="h-3 w-3" />File</div>
+                        <div className="text-sm text-muted-foreground truncate">{cvData?.fileName}</div>
+                      </div>
+                    </div>
+                    <div className="mt-4 flex items-center gap-2">
+                      <Badge variant="outline" className="bg-green-100 text-green-800 border-green-200">
+Processed
+                      </Badge>
+                      <Badge variant="outline" className="bg-blue-100 text-blue-800 border-blue-200">
+                        Ready for Matching
+                      </Badge>
+                    </div>
+                  </CardContent>
+                </Card>
               </div>
             )}
 
@@ -624,7 +648,7 @@ export default function Dashboard() {
               <div data-testid="box-job-analysis">
                 <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
                   <span className="bg-gradient-to-br from-primary to-purple-600 text-primary-foreground rounded-full w-8 h-8 flex items-center justify-center text-sm font-bold shadow-lg">2</span>
-                  🧠 AI Job Analysis
+AI Job Analysis
                 </h2>
                 <Card className="bg-gradient-to-br from-purple-50 to-indigo-50 dark:from-purple-950/30 dark:to-indigo-950/30 border-purple-200 dark:border-purple-800">
                   <CardContent className="p-6">
@@ -650,7 +674,7 @@ export default function Dashboard() {
                       </div>
                       <div className="bg-white/70 dark:bg-gray-800/70 p-4 rounded-lg backdrop-blur-sm border border-white/40">
                         <div className="text-2xl font-bold text-green-600 mb-1">
-                          {matchedJobsData?.processingMethod === 'ai' ? '✓' : '○'}
+                          {matchedJobsData?.processingMethod === 'ai' ? 'AI' : 'Basic'}
                         </div>
                         <div className="text-sm text-muted-foreground">AI Enhanced</div>
                       </div>
