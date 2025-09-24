@@ -156,6 +156,16 @@ export default function Dashboard() {
   const [showNewCVUpload, setShowNewCVUpload] = useState(false)
   const [showCompleteCVModal, setShowCompleteCVModal] = useState(false)
 
+  // ATS Score state for summary display
+  const [atsScore, setAtsScore] = useState<number | null>(null)
+  const [atsScoreLabel, setAtsScoreLabel] = useState('--% Baseline')
+
+  // Callback to update ATS score from ATSScorer component
+  const updateAtsScore = useCallback((score: number | null, label: string) => {
+    setAtsScore(score)
+    setAtsScoreLabel(label)
+  }, [])
+
   // All queries must be called before any conditional logic
   const { data: cvData, isLoading: cvLoading, error: cvError } = useQuery<CVResponse | null>({
     queryKey: ['/api/cv'],
@@ -970,7 +980,7 @@ Your CV Profile
                 </div>
                 <Card className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/30 dark:to-indigo-950/30 border-blue-200 dark:border-blue-800">
                   <CardContent className="p-4">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                       <div className="bg-white/70 dark:bg-gray-800/70 p-3 rounded-lg backdrop-blur-sm border border-white/40">
                         <div className="text-sm font-medium text-blue-800 dark:text-blue-200 mb-1 flex items-center gap-1"><Mail className="h-3 w-3" />Email</div>
                         <div className="text-sm text-muted-foreground truncate">{cvData?.parsedData?.email || 'Not specified'}</div>
@@ -982,6 +992,10 @@ Your CV Profile
                       <div className="bg-white/70 dark:bg-gray-800/70 p-3 rounded-lg backdrop-blur-sm border border-white/40">
                         <div className="text-sm font-medium text-blue-800 dark:text-blue-200 mb-1 flex items-center gap-1"><FileText className="h-3 w-3" />File</div>
                         <div className="text-sm text-muted-foreground truncate">{cvData?.fileName}</div>
+                      </div>
+                      <div className="bg-white/70 dark:bg-gray-800/70 p-3 rounded-lg backdrop-blur-sm border border-white/40">
+                        <div className="text-sm font-medium text-blue-800 dark:text-blue-200 mb-1 flex items-center gap-1"><Brain className="h-3 w-3" />ATS Score</div>
+                        <div className="text-sm text-muted-foreground" data-testid="ats-score-summary">{atsScoreLabel}</div>
                       </div>
                     </div>
                     <div className="mt-4 flex items-center gap-2">
@@ -1004,7 +1018,7 @@ Processed
                           <p className="text-sm text-blue-700 dark:text-blue-300">Check how your CV scores against job descriptions</p>
                         </div>
                       </div>
-                      <ATSScorer cvData={cvData} />
+                      <ATSScorer cvData={cvData} onScoreUpdate={updateAtsScore} />
                     </div>
                   </CardContent>
                 </Card>
