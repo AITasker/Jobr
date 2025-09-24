@@ -5,6 +5,7 @@ import { randomUUID } from "crypto";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { PhonePeService } from "./phonepe";
+import 'dotenv/config';
 
 const app = express();
 
