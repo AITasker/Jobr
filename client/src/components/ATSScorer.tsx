@@ -23,9 +23,10 @@ interface ATSScorerProps {
     originalContent?: string;
     fileName?: string;
   };
+  onScoreUpdate?: (score: number | null, label: string) => void;
 }
 
-export function ATSScorer({ cvData }: ATSScorerProps) {
+export function ATSScorer({ cvData, onScoreUpdate }: ATSScorerProps) {
   const [jobDescription, setJobDescription] = useState("");
   const [result, setResult] = useState<ATSResult | null>(null);
   const [baselineScore, setBaselineScore] = useState<number | null>(null);
@@ -46,6 +47,7 @@ export function ATSScorer({ cvData }: ATSScorerProps) {
       const data = await response.json();
       if (data.success) {
         setBaselineScore(data.data.baseline_score);
+        onScoreUpdate?.(data.data.baseline_score, `${data.data.baseline_score}% Baseline`);
       }
     } catch (error) {
       // Fallback to a simple baseline score calculation
@@ -53,6 +55,7 @@ export function ATSScorer({ cvData }: ATSScorerProps) {
       const contentLength = cvData.originalContent.length;
       const estimatedScore = Math.min(Math.max(Math.floor(contentLength / 50), 45), 75);
       setBaselineScore(estimatedScore);
+      onScoreUpdate?.(estimatedScore, `${estimatedScore}% Baseline`);
     } finally {
       setIsCalculatingBaseline(false);
     }
@@ -77,17 +80,25 @@ export function ATSScorer({ cvData }: ATSScorerProps) {
       return;
     }
 
+    const currentJD = jobDescription.trim();
     setIsLoading(true);
     try {
       const response = await apiRequest('POST', '/api/ats/score', {
-        jobDescription: jobDescription.trim(),
+        jobDescription: currentJD,
         resumeText: cvData.originalContent
       });
       
       const data = await response.json();
 
+      // Guard: Only update if JD hasn't changed during the request
+      if (jobDescription.trim() !== currentJD) {
+        // JD was changed or cleared while request was in flight, don't update
+        return;
+      }
+
       if (data.success) {
         setResult(data.data);
+        onScoreUpdate?.(data.data.ats_score, `${data.data.ats_score}% Match`);
         toast({
           title: "ATS Score Calculated",
           description: `Your ATS score is ${data.data.ats_score}%`
@@ -137,8 +148,16 @@ export function ATSScorer({ cvData }: ATSScorerProps) {
       }, 1000); // Debounce for 1 second
       
       return () => clearTimeout(timeoutId);
+    } else if (!jobDescription.trim() && baselineScore !== null) {
+      // When JD is cleared, revert to baseline score
+      setResult(null);
+      onScoreUpdate?.(baselineScore, `${baselineScore}% Baseline`);
+    } else if (!jobDescription.trim() && baselineScore === null) {
+      // When JD is cleared but no baseline yet
+      setResult(null);
+      onScoreUpdate?.(null, '--% Baseline');
     }
-  }, [jobDescription]);
+  }, [jobDescription, cvData?.originalContent, baselineScore, isLoading]);
 
   const currentScore = result?.ats_score || baselineScore;
   const hasJobDescription = !!jobDescription.trim();
