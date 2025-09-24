@@ -140,24 +140,20 @@ export function ATSScorer({ cvData, onScoreUpdate }: ATSScorerProps) {
     }
   }, [cvData?.originalContent]);
 
-  // Update score when JD changes
+  // Handle clearing JD (revert to baseline when JD is cleared)
   useEffect(() => {
-    if (jobDescription.trim() && cvData?.originalContent && !isLoading) {
-      const timeoutId = setTimeout(() => {
-        calculateScore();
-      }, 1000); // Debounce for 1 second
-      
-      return () => clearTimeout(timeoutId);
-    } else if (!jobDescription.trim() && baselineScore !== null) {
-      // When JD is cleared, revert to baseline score
-      setResult(null);
-      onScoreUpdate?.(baselineScore, `${baselineScore}% Baseline`);
-    } else if (!jobDescription.trim() && baselineScore === null) {
-      // When JD is cleared but no baseline yet
-      setResult(null);
-      onScoreUpdate?.(null, '--% Baseline');
+    if (!jobDescription.trim()) {
+      if (result) {
+        // JD was cleared, revert to baseline
+        setResult(null);
+        if (baselineScore !== null) {
+          onScoreUpdate?.(baselineScore, `${baselineScore}% Baseline`);
+        } else {
+          onScoreUpdate?.(null, '--% Baseline');
+        }
+      }
     }
-  }, [jobDescription, cvData?.originalContent, baselineScore, isLoading]);
+  }, [jobDescription, result, baselineScore]);
 
   const currentScore = result?.ats_score || baselineScore;
   const hasJobDescription = !!jobDescription.trim();
