@@ -168,18 +168,336 @@ export default function Dashboard() {
   // Enhanced CV validation with proper type checking
   const hasCvData = cvOk(cvData || null)
 
-  // Get matched jobs with proper CV validation
+  // Temporary mock data for demonstration as requested by user
+  const mockJobsData: MatchedJobsResponse = {
+    matches: [
+      {
+        job: {
+          id: "1",
+          title: "Senior Frontend Developer",
+          company: "TechCorp India",
+          description: "Looking for an experienced React developer to join our dynamic team. Must have 3+ years experience with modern JavaScript frameworks.",
+          location: "Bangalore, Karnataka",
+          salary: "₹12-18 LPA",
+          type: "Full-time",
+          remote: false,
+          skills: ["React", "JavaScript", "TypeScript", "Node.js"] as any,
+          experienceLevel: "Senior",
+          postedDate: new Date("2024-09-20T10:00:00Z") as any,
+          requirements: "React, TypeScript, 3+ years experience",
+          benefits: "Health insurance, Remote work options"
+        },
+        matchScore: 92,
+        explanation: "Excellent match based on your React and JavaScript skills",
+        skillsMatch: { matched: ["React", "JavaScript", "TypeScript"], missing: ["Node.js"], score: 85 },
+        experienceMatch: { suitable: true, explanation: "Your experience level matches perfectly", score: 95 },
+        locationMatch: { suitable: true, explanation: "Located in your preferred city", score: 100 },
+        salaryMatch: { suitable: true, explanation: "Salary range matches your expectations", score: 90 }
+      },
+      {
+        job: {
+          id: "2", 
+          title: "Full Stack Developer",
+          company: "StartupHub",
+          description: "Join our innovative startup building next-gen fintech solutions. Looking for someone passionate about full-stack development.",
+          location: "Mumbai, Maharashtra", 
+          salary: "₹10-15 LPA",
+          type: "Full-time",
+          remote: true,
+          skills: ["React", "Node.js", "MongoDB", "Express"] as any,
+          experienceLevel: "Mid-level",
+          postedDate: new Date("2024-09-19T14:30:00Z") as any,
+          requirements: "MERN stack, 2+ years experience",
+          benefits: "Equity options, Flexible hours"
+        },
+        matchScore: 88,
+        explanation: "Great fit for your full-stack capabilities",
+        skillsMatch: { matched: ["React", "Node.js"], missing: ["MongoDB"], score: 75 },
+        experienceMatch: { suitable: true, explanation: "Perfect experience match", score: 90 },
+        locationMatch: { suitable: true, explanation: "Remote work available", score: 100 },
+        salaryMatch: { suitable: true, explanation: "Competitive salary package", score: 85 }
+      },
+      {
+        job: {
+          id: "3",
+          title: "React Developer", 
+          company: "Digital Solutions",
+          description: "We're seeking a skilled React developer to build modern web applications. Great opportunity for career growth.",
+          location: "Pune, Maharashtra",
+          salary: "₹8-12 LPA", 
+          type: "Full-time",
+          remote: false,
+          skills: ["React", "JavaScript", "CSS", "HTML"] as any,
+          experienceLevel: "Mid-level",
+          postedDate: new Date("2024-09-18T09:15:00Z") as any,
+          requirements: "React, JavaScript, CSS skills required",
+          benefits: "Learning opportunities, Team outings"
+        },
+        matchScore: 85,
+        explanation: "Good match for your React expertise",
+        skillsMatch: { matched: ["React", "JavaScript", "CSS"], missing: [], score: 95 },
+        experienceMatch: { suitable: true, explanation: "Experience level is appropriate", score: 85 },
+        locationMatch: { suitable: true, explanation: "Within commutable distance", score: 80 },
+        salaryMatch: { suitable: true, explanation: "Fair compensation", score: 75 }
+      },
+      {
+        job: {
+          id: "4",
+          title: "JavaScript Developer",
+          company: "WebTech Solutions", 
+          description: "Looking for a passionate JavaScript developer to work on cutting-edge web projects with modern technologies.",
+          location: "Hyderabad, Telangana",
+          salary: "₹9-14 LPA",
+          type: "Full-time", 
+          remote: true,
+          skills: ["JavaScript", "Vue.js", "TypeScript", "AWS"] as any,
+          experienceLevel: "Mid-level",
+          postedDate: new Date("2024-09-17T16:45:00Z") as any,
+          requirements: "Strong JavaScript fundamentals, Modern frameworks",
+          benefits: "Remote work, Professional development"
+        },
+        matchScore: 82,
+        explanation: "Strong JavaScript skills alignment",
+        skillsMatch: { matched: ["JavaScript", "TypeScript"], missing: ["Vue.js", "AWS"], score: 70 },
+        experienceMatch: { suitable: true, explanation: "Good experience fit", score: 85 },
+        locationMatch: { suitable: true, explanation: "Remote work available", score: 100 },
+        salaryMatch: { suitable: true, explanation: "Reasonable salary range", score: 80 }
+      },
+      {
+        job: {
+          id: "5",
+          title: "Frontend Engineer",
+          company: "InnovateLabs",
+          description: "Join our team to create amazing user experiences. We value creativity, innovation, and technical excellence.",
+          location: "Chennai, Tamil Nadu",
+          salary: "₹11-16 LPA",
+          type: "Full-time",
+          remote: false, 
+          skills: ["React", "Angular", "JavaScript", "SASS"] as any,
+          experienceLevel: "Senior",
+          postedDate: new Date("2024-09-16T11:20:00Z") as any,
+          requirements: "Frontend frameworks, UI/UX sense",
+          benefits: "Health benefits, Stock options"
+        },
+        matchScore: 79,
+        explanation: "Good frontend development match", 
+        skillsMatch: { matched: ["React", "JavaScript"], missing: ["Angular", "SASS"], score: 65 },
+        experienceMatch: { suitable: true, explanation: "Experience aligns well", score: 80 },
+        locationMatch: { suitable: false, explanation: "May require relocation", score: 60 },
+        salaryMatch: { suitable: true, explanation: "Good salary package", score: 90 }
+      },
+      {
+        job: {
+          id: "6",
+          title: "Software Developer",
+          company: "TechGiant Corp",
+          description: "Be part of our large-scale enterprise applications team. Work with cutting-edge technologies and expert mentors.",
+          location: "Gurgaon, Haryana", 
+          salary: "₹15-22 LPA",
+          type: "Full-time",
+          remote: false,
+          skills: ["Java", "Spring", "React", "SQL"] as any,
+          experienceLevel: "Senior",
+          postedDate: new Date("2024-09-15T13:10:00Z") as any,
+          requirements: "Enterprise development experience, Strong problem-solving",
+          benefits: "Excellent benefits, Career growth"
+        },
+        matchScore: 76,
+        explanation: "Enterprise development opportunity",
+        skillsMatch: { matched: ["React"], missing: ["Java", "Spring", "SQL"], score: 50 },
+        experienceMatch: { suitable: true, explanation: "Senior level position", score: 90 },
+        locationMatch: { suitable: true, explanation: "NCR region", score: 75 },
+        salaryMatch: { suitable: true, explanation: "Excellent compensation", score: 95 }
+      },
+      {
+        job: {
+          id: "7",
+          title: "Web Developer",
+          company: "Creative Agency",
+          description: "Looking for a creative web developer to work on diverse client projects. Perfect for someone who loves variety.",
+          location: "Kochi, Kerala",
+          salary: "₹6-10 LPA",
+          type: "Full-time",
+          remote: true,
+          skills: ["HTML", "CSS", "JavaScript", "WordPress"] as any,
+          experienceLevel: "Entry-level",
+          postedDate: new Date("2024-09-14T08:30:00Z") as any, 
+          requirements: "Web development basics, Creative mindset",
+          benefits: "Creative environment, Flexible work"
+        },
+        matchScore: 73,
+        explanation: "Creative web development role",
+        skillsMatch: { matched: ["HTML", "CSS", "JavaScript"], missing: ["WordPress"], score: 80 },
+        experienceMatch: { suitable: true, explanation: "Good for career development", score: 70 },
+        locationMatch: { suitable: true, explanation: "Remote work option", score: 100 },
+        salaryMatch: { suitable: false, explanation: "Below expected range", score: 60 }
+      },
+      {
+        job: {
+          id: "8",
+          title: "Mobile App Developer",
+          company: "AppInnovate",
+          description: "Join our mobile-first company to build next-generation mobile applications for millions of users.",
+          location: "Bangalore, Karnataka",
+          salary: "₹13-19 LPA", 
+          type: "Full-time",
+          remote: false,
+          skills: ["React Native", "JavaScript", "Mobile Development", "API Integration"] as any,
+          experienceLevel: "Mid-level",
+          postedDate: new Date("2024-09-13T15:45:00Z") as any,
+          requirements: "Mobile app development, React Native experience",
+          benefits: "Top-tier benefits, Innovation time"
+        },
+        matchScore: 70,
+        explanation: "Mobile development transition opportunity",
+        skillsMatch: { matched: ["JavaScript"], missing: ["React Native", "Mobile Development"], score: 40 },
+        experienceMatch: { suitable: true, explanation: "Mid-level position fit", score: 85 },
+        locationMatch: { suitable: true, explanation: "Bangalore location", score: 100 },
+        salaryMatch: { suitable: true, explanation: "Attractive salary", score: 90 }
+      },
+      {
+        job: {
+          id: "9",
+          title: "UI/UX Developer",
+          company: "DesignStudio",
+          description: "Combine your development skills with design thinking. Create beautiful and functional user interfaces.",
+          location: "Mumbai, Maharashtra",
+          salary: "₹9-13 LPA",
+          type: "Full-time", 
+          remote: true,
+          skills: ["HTML", "CSS", "JavaScript", "Figma", "UI/UX"] as any,
+          experienceLevel: "Mid-level",
+          postedDate: new Date("2024-09-12T12:00:00Z") as any,
+          requirements: "Frontend development + Design skills",
+          benefits: "Design tools, Creative freedom"
+        },
+        matchScore: 68,
+        explanation: "Frontend + Design hybrid role",
+        skillsMatch: { matched: ["HTML", "CSS", "JavaScript"], missing: ["Figma", "UI/UX"], score: 60 },
+        experienceMatch: { suitable: true, explanation: "Good experience match", score: 80 },
+        locationMatch: { suitable: true, explanation: "Remote work available", score: 100 },
+        salaryMatch: { suitable: true, explanation: "Fair compensation", score: 75 }
+      },
+      {
+        job: {
+          id: "10",
+          title: "Backend Developer",
+          company: "DataFlow Systems",
+          description: "Build robust backend systems and APIs. Work with big data and scalable architectures in a growing company.",
+          location: "Pune, Maharashtra",
+          salary: "₹10-16 LPA",
+          type: "Full-time",
+          remote: false,
+          skills: ["Node.js", "Python", "MongoDB", "AWS", "APIs"] as any,
+          experienceLevel: "Mid-level", 
+          postedDate: new Date("2024-09-11T10:30:00Z") as any,
+          requirements: "Backend development, Database design",
+          benefits: "Technical growth, Modern stack"
+        },
+        matchScore: 65,
+        explanation: "Backend development opportunity",
+        skillsMatch: { matched: [], missing: ["Node.js", "Python", "MongoDB", "AWS"], score: 30 },
+        experienceMatch: { suitable: true, explanation: "Mid-level backend role", score: 80 },
+        locationMatch: { suitable: true, explanation: "Pune location", score: 85 },
+        salaryMatch: { suitable: true, explanation: "Good salary range", score: 85 }
+      }
+    ],
+    total: 10,
+    processingMethod: 'ai'
+  }
+
+  // Get matched jobs with proper CV validation - using mock data for demonstration
   const { data: matchedJobsData, isLoading: matchedJobsLoading, error: matchedJobsError } = useQuery<MatchedJobsResponse>({
-    queryKey: ['/api/jobs/matched', cvData?.id],
-    enabled: Boolean(isAuthenticated && hasCvData && cvData?.id),
-    retry: false
+    queryKey: ['/api/jobs/matched', 'demo'],
+    enabled: isAuthenticated, // Always enabled for demo purposes
+    retry: false,
+    // Override with mock data for demonstration
+    queryFn: () => Promise.resolve(mockJobsData)
   })
 
-  // Get all applications
+  // Mock applications data for demonstration
+  const mockApplicationsData: ApplicationWithJob[] = [
+    {
+      id: "1",
+      userId: "user1",
+      jobId: "1",
+      status: "applied",
+      appliedAt: new Date("2024-09-20T10:00:00Z"),
+      notes: "Applied through company website",
+      matchScore: 92,
+      job: {
+        id: "1",
+        title: "Senior Frontend Developer",
+        company: "TechCorp India",
+        description: "React developer position",
+        location: "Bangalore, Karnataka",
+        salary: "₹12-18 LPA",
+        type: "Full-time",
+        remote: false,
+        skills: ["React", "JavaScript", "TypeScript"] as any,
+        experienceLevel: "Senior",
+        postedDate: new Date("2024-09-20T10:00:00Z") as any,
+        requirements: "React, TypeScript, 3+ years experience",
+        benefits: "Health insurance, Remote work options"
+      }
+    },
+    {
+      id: "2", 
+      userId: "user1",
+      jobId: "2",
+      status: "interviewing",
+      appliedAt: new Date("2024-09-18T14:30:00Z"),
+      notes: "First round completed, technical round scheduled",
+      matchScore: 88,
+      job: {
+        id: "2",
+        title: "Full Stack Developer", 
+        company: "StartupHub",
+        description: "MERN stack position",
+        location: "Mumbai, Maharashtra",
+        salary: "₹10-15 LPA",
+        type: "Full-time",
+        remote: true,
+        skills: ["React", "Node.js", "MongoDB"] as any,
+        experienceLevel: "Mid-level",
+        postedDate: new Date("2024-09-19T14:30:00Z") as any,
+        requirements: "MERN stack, 2+ years experience",
+        benefits: "Equity options, Flexible hours"
+      }
+    },
+    {
+      id: "3",
+      userId: "user1", 
+      jobId: "3",
+      status: "applied",
+      appliedAt: new Date("2024-09-17T09:15:00Z"),
+      notes: "Applied via LinkedIn",
+      matchScore: 85,
+      job: {
+        id: "3",
+        title: "React Developer",
+        company: "Digital Solutions", 
+        description: "Modern web applications",
+        location: "Pune, Maharashtra",
+        salary: "₹8-12 LPA",
+        type: "Full-time",
+        remote: false,
+        skills: ["React", "JavaScript", "CSS"] as any,
+        experienceLevel: "Mid-level",
+        postedDate: new Date("2024-09-18T09:15:00Z") as any,
+        requirements: "React, JavaScript, CSS skills required",
+        benefits: "Learning opportunities, Team outings"
+      }
+    }
+  ]
+
+  // Get all applications - using mock data for demonstration
   const { data: applications, isLoading: applicationsLoading } = useQuery<ApplicationWithJob[]>({
-    queryKey: ['/api/applications'],
+    queryKey: ['/api/applications', 'demo'],
     enabled: isAuthenticated,
-    retry: false
+    retry: false,
+    // Override with mock data for demonstration
+    queryFn: () => Promise.resolve(mockApplicationsData)
   })
 
   // Enhanced job search with new API endpoint - only when on search tab
@@ -528,39 +846,51 @@ export default function Dashboard() {
           <Card>
             <CardContent className="p-4 text-center">
               <Briefcase className="h-6 w-6 mx-auto mb-2 text-primary" />
-              <div className="text-2xl font-bold text-foreground" data-testid="stat-new-matches">
+              <button 
+                onClick={() => setActiveTab('search')}
+                className="text-2xl font-bold text-foreground hover:text-primary transition-colors cursor-pointer" 
+                data-testid="stat-new-matches"
+              >
                 {matchedJobsLoading ? (
                   <Loader2 className="h-5 w-5 animate-spin" />
                 ) : (
                   stats.newMatches
                 )}
-              </div>
+              </button>
               <div className="text-sm text-muted-foreground">New Matches</div>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="p-4 text-center">
               <Target className="h-6 w-6 mx-auto mb-2 text-accent-foreground" />
-              <div className="text-2xl font-bold text-foreground" data-testid="stat-applications-sent">
+              <button 
+                onClick={() => setActiveTab('applications')}
+                className="text-2xl font-bold text-foreground hover:text-primary transition-colors cursor-pointer" 
+                data-testid="stat-applications-sent"
+              >
                 {applicationsLoading ? (
                   <Loader2 className="h-5 w-5 animate-spin" />
                 ) : (
                   stats.applicationsSent
                 )}
-              </div>
+              </button>
               <div className="text-sm text-muted-foreground">Applications Sent</div>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="p-4 text-center">
               <FileText className="h-6 w-6 mx-auto mb-2 text-green-600" />
-              <div className="text-2xl font-bold text-foreground" data-testid="stat-interviews">
+              <button 
+                onClick={() => setActiveTab('applications')}
+                className="text-2xl font-bold text-foreground hover:text-primary transition-colors cursor-pointer" 
+                data-testid="stat-interviews"
+              >
                 {applicationsLoading ? (
                   <Loader2 className="h-5 w-5 animate-spin" />
                 ) : (
                   stats.interviews
                 )}
-              </div>
+              </button>
               <div className="text-sm text-muted-foreground">Interviews</div>
             </CardContent>
           </Card>
