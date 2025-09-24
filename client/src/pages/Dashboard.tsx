@@ -513,10 +513,20 @@ export default function Dashboard() {
     skills: skillsFilter.length > 0 ? skillsFilter.join(',') : undefined
   }
 
+  // Mock search results data for demonstration
+  const mockSearchResults: SearchResultsResponse = {
+    results: mockJobsData.matches, // Use the same job data
+    total: mockJobsData.total,
+    filters: searchParams,
+    processingMethod: 'ai-enhanced'
+  }
+
   const { data: searchResults, isLoading: searchLoading, error: searchError, refetch: refetchSearch } = useQuery<SearchResultsResponse>({
     queryKey: ['/api/jobs/search/enhanced', searchParams],
-    enabled: Boolean(isAuthenticated && hasCvData && activeTab === 'search' && (searchQuery || locationFilter || typeFilter || experienceLevel || remoteOnly || skillsFilter.length > 0)),
-    retry: false
+    enabled: Boolean(isAuthenticated && activeTab === 'search'),
+    retry: false,
+    // Override with mock data for demonstration
+    queryFn: () => Promise.resolve(mockSearchResults)
   })
 
   // Job insights query for market analysis
@@ -1476,8 +1486,8 @@ AI Job Analysis
               </CardContent>
             </Card>
             
-            {/* Enhanced Search Results */}
-            {(searchQuery || locationFilter || typeFilter || experienceLevel || remoteOnly || skillsFilter.length > 0) && (
+            {/* Enhanced Search Results - Always show for demo */}
+            {(searchQuery || locationFilter || typeFilter || experienceLevel || remoteOnly || skillsFilter.length > 0 || activeTab === 'search') && (
               <Card>
                 <CardHeader>
                   <div className="flex items-center justify-between">
@@ -1598,22 +1608,66 @@ AI Job Analysis
                         </div>
                       )}
                       
-                      {/* Job Results Grid */}
-                      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-                        {sortJobResults(searchResults.results, sortBy).map((jobMatch: JobMatchResponse) => (
-                          <JobCard 
-                            key={jobMatch.job.id} 
-                            jobMatch={{
-                              ...jobMatch,
-                              job: {
-                                ...jobMatch.job,
-                                salary: jobMatch.job.salary || undefined
-                              }
-                            } as any}
-                            onAddToComparison={() => addToComparison(jobMatch)}
-                            isInComparison={compareJobs.some(job => job.job.id === jobMatch.job.id)}
-                          />
-                        ))}
+                      {/* Job Results Table */}
+                      <div className="overflow-x-auto">
+                        <table className="w-full">
+                          <thead>
+                            <tr className="border-b border-blue-200 dark:border-blue-800">
+                              <th className="text-left py-3 px-2 text-sm font-medium text-blue-900 dark:text-blue-100">Job Title</th>
+                              <th className="text-left py-3 px-2 text-sm font-medium text-blue-900 dark:text-blue-100">Company</th>
+                              <th className="text-left py-3 px-2 text-sm font-medium text-blue-900 dark:text-blue-100">Location</th>
+                              <th className="text-left py-3 px-2 text-sm font-medium text-blue-900 dark:text-blue-100">Salary</th>
+                              <th className="text-left py-3 px-2 text-sm font-medium text-blue-900 dark:text-blue-100">Match</th>
+                              <th className="text-left py-3 px-2 text-sm font-medium text-blue-900 dark:text-blue-100">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {sortJobResults(searchResults.results, sortBy).map((jobMatch: JobMatchResponse, index) => (
+                              <tr key={jobMatch.job.id} className="border-b border-blue-100 dark:border-blue-900 hover:bg-blue-50 dark:hover:bg-blue-950/50">
+                                <td className="py-3 px-2">
+                                  <div className="font-medium text-foreground">{jobMatch.job.title}</div>
+                                  <div className="text-sm text-muted-foreground">{jobMatch.job.type}</div>
+                                </td>
+                                <td className="py-3 px-2 text-sm text-foreground">{jobMatch.job.company}</td>
+                                <td className="py-3 px-2 text-sm text-foreground">
+                                  <div>{jobMatch.job.location}</div>
+                                  {jobMatch.job.remote && <div className="text-xs text-blue-600">Remote Available</div>}
+                                </td>
+                                <td className="py-3 px-2 text-sm text-foreground">{jobMatch.job.salary}</td>
+                                <td className="py-3 px-2">
+                                  <Badge 
+                                    variant="outline" 
+                                    className={`${
+                                      jobMatch.matchScore >= 80 ? 'bg-green-100 text-green-800 border-green-200' :
+                                      jobMatch.matchScore >= 60 ? 'bg-yellow-100 text-yellow-800 border-yellow-200' :
+                                      'bg-red-100 text-red-800 border-red-200'
+                                    }`}
+                                  >
+                                    {Math.round(jobMatch.matchScore)}%
+                                  </Badge>
+                                </td>
+                                <td className="py-3 px-2">
+                                  <div className="flex gap-2">
+                                    <Button 
+                                      size="sm" 
+                                      variant="outline"
+                                      data-testid={`button-view-jd-search-${index}`}
+                                    >
+                                      View JD
+                                    </Button>
+                                    <Button 
+                                      size="sm" 
+                                      variant="default"
+                                      data-testid={`button-apply-search-${index}`}
+                                    >
+                                      Apply
+                                    </Button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
                       </div>
                     </div>
                   ) : (searchQuery || locationFilter || typeFilter || experienceLevel || remoteOnly || skillsFilter.length > 0) ? (
