@@ -627,27 +627,27 @@ Your CV Profile
                     </Button>
                   </div>
                 </div>
-                <Card className="bg-gradient-to-br from-green-50 to-teal-50 dark:from-green-950/30 dark:to-teal-950/30 border-green-200 dark:border-green-800">
+                <Card className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/30 dark:to-indigo-950/30 border-blue-200 dark:border-blue-800">
                   <CardContent className="p-4">
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       <div className="bg-white/70 dark:bg-gray-800/70 p-3 rounded-lg backdrop-blur-sm border border-white/40">
-                        <div className="text-sm font-medium text-green-800 dark:text-green-200 mb-1 flex items-center gap-1"><Mail className="h-3 w-3" />Email</div>
+                        <div className="text-sm font-medium text-blue-800 dark:text-blue-200 mb-1 flex items-center gap-1"><Mail className="h-3 w-3" />Email</div>
                         <div className="text-sm text-muted-foreground truncate">{cvData?.parsedData?.email || 'Not specified'}</div>
                       </div>
                       <div className="bg-white/70 dark:bg-gray-800/70 p-3 rounded-lg backdrop-blur-sm border border-white/40">
-                        <div className="text-sm font-medium text-green-800 dark:text-green-200 mb-1 flex items-center gap-1"><Target className="h-3 w-3" />Skills</div>
+                        <div className="text-sm font-medium text-blue-800 dark:text-blue-200 mb-1 flex items-center gap-1"><Target className="h-3 w-3" />Skills</div>
                         <div className="text-sm text-muted-foreground">{cvData?.skills?.length || 0} identified</div>
                       </div>
                       <div className="bg-white/70 dark:bg-gray-800/70 p-3 rounded-lg backdrop-blur-sm border border-white/40">
-                        <div className="text-sm font-medium text-green-800 dark:text-green-200 mb-1 flex items-center gap-1"><FileText className="h-3 w-3" />File</div>
+                        <div className="text-sm font-medium text-blue-800 dark:text-blue-200 mb-1 flex items-center gap-1"><FileText className="h-3 w-3" />File</div>
                         <div className="text-sm text-muted-foreground truncate">{cvData?.fileName}</div>
                       </div>
                     </div>
                     <div className="mt-4 flex items-center gap-2">
-                      <Badge variant="outline" className="bg-green-100 text-green-800 border-green-200">
+                      <Badge variant="outline" className="bg-blue-100 text-blue-800 border-blue-200">
 Processed
                       </Badge>
-                      <Badge variant="outline" className="bg-blue-100 text-blue-800 border-blue-200">
+                      <Badge variant="outline" className="bg-indigo-100 text-indigo-800 border-indigo-200">
                         Ready for Matching
                       </Badge>
                     </div>
@@ -663,20 +663,20 @@ Processed
                   <span className="bg-gradient-to-br from-primary to-purple-600 text-primary-foreground rounded-full w-8 h-8 flex items-center justify-center text-sm font-bold shadow-lg">2</span>
 AI Job Analysis
                 </h2>
-                <Card className="bg-gradient-to-br from-purple-50 to-indigo-50 dark:from-purple-950/30 dark:to-indigo-950/30 border-purple-200 dark:border-purple-800">
+                <Card className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/30 dark:to-indigo-950/30 border-blue-200 dark:border-blue-800">
                   <CardContent className="p-6">
                     <div className="flex items-center gap-3 mb-6">
-                      <div className="bg-purple-100 dark:bg-purple-900 p-2 rounded-lg">
-                        <Brain className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+                      <div className="bg-blue-100 dark:bg-blue-900 p-2 rounded-lg">
+                        <Brain className="h-5 w-5 text-blue-600 dark:text-blue-400" />
                       </div>
                       <div>
-                        <h3 className="font-semibold text-purple-900 dark:text-purple-100">AI-Powered Analysis</h3>
-                        <p className="text-sm text-purple-700 dark:text-purple-300">Analyzing your CV for the best opportunities</p>
+                        <h3 className="font-semibold text-blue-900 dark:text-blue-100">AI-Powered Analysis</h3>
+                        <p className="text-sm text-blue-700 dark:text-blue-300">Analyzing your CV for the best opportunities</p>
                       </div>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       <div className="bg-white/70 dark:bg-gray-800/70 p-4 rounded-lg backdrop-blur-sm border border-white/40">
-                        <div className="text-2xl font-bold text-purple-600 mb-1">
+                        <div className="text-2xl font-bold text-blue-600 mb-1">
                           {matchedJobsLoading ? (
                             <Loader2 className="h-6 w-6 animate-spin" />
                           ) : (
@@ -701,32 +701,32 @@ AI Job Analysis
                 
                 {/* Interactive Jobs Table */}
                 {matchedJobsData?.matches && matchedJobsData.matches.length > 0 && (
-                  <Card className="mt-6 bg-gradient-to-br from-blue-50 to-cyan-50 dark:from-blue-950/30 dark:to-cyan-950/30 border-blue-200 dark:border-blue-800">
+                  <Card className="mt-6 bg-gradient-to-br from-indigo-50 to-blue-50 dark:from-indigo-950/30 dark:to-blue-950/30 border-indigo-200 dark:border-indigo-800">
                     <CardContent className="p-6">
                       <div className="flex items-center gap-3 mb-6">
-                        <div className="bg-blue-100 dark:bg-blue-900 p-2 rounded-lg">
-                          <Briefcase className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                        <div className="bg-indigo-100 dark:bg-indigo-900 p-2 rounded-lg">
+                          <Briefcase className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
                         </div>
                         <div>
-                          <h3 className="font-semibold text-blue-900 dark:text-blue-100">Matched Jobs</h3>
-                          <p className="text-sm text-blue-700 dark:text-blue-300">Jobs that match your CV profile</p>
+                          <h3 className="font-semibold text-indigo-900 dark:text-indigo-100">Matched Jobs</h3>
+                          <p className="text-sm text-indigo-700 dark:text-indigo-300">Jobs that match your CV profile</p>
                         </div>
                       </div>
                       
                       <div className="overflow-x-auto">
                         <table className="w-full">
                           <thead>
-                            <tr className="border-b border-blue-200 dark:border-blue-800">
-                              <th className="text-left py-3 px-2 text-sm font-medium text-blue-900 dark:text-blue-100">Job Title</th>
-                              <th className="text-left py-3 px-2 text-sm font-medium text-blue-900 dark:text-blue-100">Company</th>
-                              <th className="text-left py-3 px-2 text-sm font-medium text-blue-900 dark:text-blue-100">Location</th>
-                              <th className="text-left py-3 px-2 text-sm font-medium text-blue-900 dark:text-blue-100">Match</th>
-                              <th className="text-left py-3 px-2 text-sm font-medium text-blue-900 dark:text-blue-100">Actions</th>
+                            <tr className="border-b border-indigo-200 dark:border-indigo-800">
+                              <th className="text-left py-3 px-2 text-sm font-medium text-indigo-900 dark:text-indigo-100">Job Title</th>
+                              <th className="text-left py-3 px-2 text-sm font-medium text-indigo-900 dark:text-indigo-100">Company</th>
+                              <th className="text-left py-3 px-2 text-sm font-medium text-indigo-900 dark:text-indigo-100">Location</th>
+                              <th className="text-left py-3 px-2 text-sm font-medium text-indigo-900 dark:text-indigo-100">Match</th>
+                              <th className="text-left py-3 px-2 text-sm font-medium text-indigo-900 dark:text-indigo-100">Actions</th>
                             </tr>
                           </thead>
                           <tbody>
                             {matchedJobsData.matches.map((match, index) => (
-                              <tr key={index} className="border-b border-blue-100 dark:border-blue-900 hover:bg-blue-50 dark:hover:bg-blue-950/50">
+                              <tr key={index} className="border-b border-indigo-100 dark:border-indigo-900 hover:bg-indigo-50 dark:hover:bg-indigo-950/50">
                                 <td className="py-3 px-2">
                                   <div className="font-medium text-foreground">{match.job.title}</div>
                                   <div className="text-sm text-muted-foreground truncate max-w-xs">{match.job.description?.substring(0, 100)}...</div>
@@ -863,24 +863,24 @@ AI Job Analysis
                   <span className="bg-gradient-to-br from-primary to-blue-600 text-primary-foreground rounded-full w-8 h-8 flex items-center justify-center text-sm font-bold shadow-lg">4</span>
                   {jdIntegrated ? '✨ Enhanced Job Matches' : '🎯 Your Job Matches'}
                 </h2>
-                <Card className={jdIntegrated ? "bg-gradient-to-br from-emerald-50 to-blue-50 dark:from-emerald-950/30 dark:to-blue-950/30 border-emerald-200 dark:border-emerald-800" : "bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/30 dark:to-indigo-950/30 border-blue-200 dark:border-blue-800"}>
+                <Card className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/30 dark:to-indigo-950/30 border-blue-200 dark:border-blue-800">
                   <CardHeader className="pb-4">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
-                        <div className={`p-2 rounded-lg ${jdIntegrated ? 'bg-emerald-100 dark:bg-emerald-900' : 'bg-blue-100 dark:bg-blue-900'}`}>
-                          {jdIntegrated ? <Sparkles className="h-5 w-5 text-emerald-600 dark:text-emerald-400" /> : <Target className="h-5 w-5 text-blue-600 dark:text-blue-400" />}
+                        <div className="p-2 rounded-lg bg-blue-100 dark:bg-blue-900">
+                          {jdIntegrated ? <Sparkles className="h-5 w-5 text-blue-600 dark:text-blue-400" /> : <Target className="h-5 w-5 text-blue-600 dark:text-blue-400" />}
                         </div>
                         <div>
-                          <h3 className={`font-semibold ${jdIntegrated ? 'text-emerald-900 dark:text-emerald-100' : 'text-blue-900 dark:text-blue-100'}`}>
+                          <h3 className="font-semibold text-blue-900 dark:text-blue-100">
                             {jdIntegrated ? 'AI-Enhanced Matches' : 'Personalized Matches'}
                           </h3>
-                          <p className={`text-sm ${jdIntegrated ? 'text-emerald-700 dark:text-emerald-300' : 'text-blue-700 dark:text-blue-300'}`}>
+                          <p className="text-sm text-blue-700 dark:text-blue-300">
                             {jdIntegrated ? 'Optimized for your target job' : 'Based on your CV profile'}
                           </p>
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
-                        <Badge variant={jdIntegrated ? "default" : "secondary"} className={jdIntegrated ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200" : ""}>
+                        <Badge variant={jdIntegrated ? "default" : "secondary"} className={jdIntegrated ? "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200" : ""}>
                           {(jdIntegrated ? isLoadingEnhancedMatches : matchedJobsLoading) ? (
                             <Loader2 className="h-4 w-4 animate-spin" />
                           ) : (
@@ -888,7 +888,7 @@ AI Job Analysis
                           )}
                         </Badge>
                         {jdIntegrated && (
-                          <Badge variant="outline" className="bg-gradient-to-r from-yellow-100 to-orange-100 text-orange-800 border-orange-200">
+                          <Badge variant="outline" className="bg-gradient-to-r from-indigo-100 to-blue-100 text-indigo-800 border-indigo-200">
                             Enhanced
                           </Badge>
                         )}
