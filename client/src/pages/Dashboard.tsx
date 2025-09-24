@@ -8,6 +8,7 @@ import { JobCard } from '@/components/JobCard'
 import { EnhancedCVDisplay } from '@/components/EnhancedCVDisplay'
 import { JobMatchSection } from '@/components/JobMatchSection'
 import { ATSScorer } from '@/components/ATSScorer'
+import { ATSScoreCalculator } from '@/components/ATSScoreCalculator'
 import { ApplicationTracker } from '@/components/ApplicationTracker'
 import { AddApplicationModal } from '@/components/AddApplicationModal'
 import { EditApplicationModal } from '@/components/EditApplicationModal'
@@ -994,7 +995,31 @@ Your CV Profile
                         <div className="text-sm text-muted-foreground truncate">{cvData?.fileName}</div>
                       </div>
                       <div className="bg-white/70 dark:bg-gray-800/70 p-3 rounded-lg backdrop-blur-sm border border-white/40">
-                        <div className="text-sm font-medium text-blue-800 dark:text-blue-200 mb-1 flex items-center gap-1"><Brain className="h-3 w-3" />ATS Score</div>
+                        <div className="text-sm font-medium text-blue-800 dark:text-blue-200 mb-1 flex items-center gap-1">
+                          <Brain className="h-3 w-3" />
+                          ATS Score
+                          <Dialog>
+                            <DialogTrigger asChild>
+                              <Button 
+                                size="icon" 
+                                variant="ghost" 
+                                className="h-4 w-4 ml-auto text-blue-600 hover:text-blue-800 hover:bg-blue-100"
+                                data-testid="button-ats-calculate"
+                              >
+                                <Plus className="h-3 w-3" />
+                              </Button>
+                            </DialogTrigger>
+                            <DialogContent className="sm:max-w-[600px]">
+                              <DialogHeader>
+                                <DialogTitle>Calculate ATS Score</DialogTitle>
+                                <DialogDescription>
+                                  Enter a job description to calculate how well your CV matches the requirements.
+                                </DialogDescription>
+                              </DialogHeader>
+                              <ATSScoreCalculator cvData={cvData} onScoreUpdate={updateAtsScore} />
+                            </DialogContent>
+                          </Dialog>
+                        </div>
                         <div className="text-sm text-muted-foreground" data-testid="ats-score-summary">{atsScoreLabel}</div>
                       </div>
                     </div>
@@ -1005,20 +1030,6 @@ Processed
                       <Badge variant="outline" className="bg-indigo-100 text-indigo-800 border-indigo-200">
                         Ready for Matching
                       </Badge>
-                    </div>
-                    
-                    {/* Integrated ATS Scoring Section */}
-                    <div className="mt-6 pt-6 border-t border-blue-200 dark:border-blue-800">
-                      <div className="flex items-center gap-3 mb-4">
-                        <div className="bg-blue-100 dark:bg-blue-900 p-2 rounded-lg">
-                          <Target className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-                        </div>
-                        <div>
-                          <h3 className="font-semibold text-blue-900 dark:text-blue-100">ATS Score Analysis</h3>
-                          <p className="text-sm text-blue-700 dark:text-blue-300">Check how your CV scores against job descriptions</p>
-                        </div>
-                      </div>
-                      <ATSScorer cvData={cvData} onScoreUpdate={updateAtsScore} />
                     </div>
                   </CardContent>
                 </Card>
@@ -1738,6 +1749,81 @@ AI Job Analysis
                       </p>
                     </div>
                   )}
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Keyword Suggestions and ATS Improvement Section */}
+            {hasCvData && (
+              <Card className="bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-950/30 dark:to-emerald-950/30 border-green-200 dark:border-green-800">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Sparkles className="h-5 w-5 text-green-600 dark:text-green-400" />
+                    ATS Improvement Suggestions
+                  </CardTitle>
+                  <p className="text-sm text-green-700 dark:text-green-300">
+                    Keywords and skills found in your CV that can help improve your ATS score
+                  </p>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* Current Keywords */}
+                    <div className="space-y-3">
+                      <h4 className="font-medium text-green-900 dark:text-green-100">Current Keywords in Your CV</h4>
+                      <div className="flex flex-wrap gap-2">
+                        {cvData?.skills?.slice(0, 10).map((skill, index) => (
+                          <Badge 
+                            key={index} 
+                            variant="secondary" 
+                            className="bg-green-100 text-green-800 border-green-200 dark:bg-green-900/30 dark:text-green-300 dark:border-green-700"
+                          >
+                            {skill}
+                          </Badge>
+                        )) || (
+                          <p className="text-sm text-muted-foreground">Upload a CV to see your keywords</p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Suggested Improvements */}
+                    <div className="space-y-3">
+                      <h4 className="font-medium text-green-900 dark:text-green-100">Trending Industry Keywords</h4>
+                      <div className="flex flex-wrap gap-2">
+                        {[
+                          'React', 'Node.js', 'TypeScript', 'Python', 'AWS', 'Docker',
+                          'Kubernetes', 'MongoDB', 'PostgreSQL', 'GraphQL', 'REST API',
+                          'Microservices', 'CI/CD', 'Agile', 'Scrum', 'Git'
+                        ].map((keyword, index) => (
+                          <Badge 
+                            key={index} 
+                            variant="outline" 
+                            className="border-green-300 text-green-700 hover:bg-green-100 dark:border-green-600 dark:text-green-300 dark:hover:bg-green-900/30 cursor-pointer"
+                            data-testid={`keyword-suggestion-${index}`}
+                          >
+                            {keyword}
+                          </Badge>
+                        ))}
+                      </div>
+                      <p className="text-xs text-green-600 dark:text-green-400">
+                        Consider adding these keywords to your CV if they match your experience
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Improvement Tips */}
+                  <div className="mt-6 p-4 bg-green-100/50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
+                    <h4 className="font-medium text-green-900 dark:text-green-100 mb-2 flex items-center gap-2">
+                      <Target className="h-4 w-4" />
+                      Quick ATS Tips
+                    </h4>
+                    <ul className="text-sm text-green-700 dark:text-green-300 space-y-1">
+                      <li>• Use keywords from job descriptions that match your experience</li>
+                      <li>• Include both acronyms and full terms (e.g., "AI" and "Artificial Intelligence")</li>
+                      <li>• Quantify your achievements with numbers and percentages</li>
+                      <li>• Use industry-standard job titles and skill names</li>
+                      <li>• Include relevant certifications and technologies you've worked with</li>
+                    </ul>
+                  </div>
                 </CardContent>
               </Card>
             )}
