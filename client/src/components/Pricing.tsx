@@ -3,52 +3,37 @@ import { PricingCard } from '@/components/PricingCard'
 export function Pricing() {
   const pricingPlans = [
     {
-      title: 'Free',
+      title: 'Free Trial',
       price: 'Free',
-      description: 'Perfect for getting started with AI job search',
+      description: 'Try our AI job search platform with limited features',
       features: [
-        '5 Applications per month',
+        '2 CV Downloads',
         'Basic Job Matching',
         'Application Tracking',
         'CV Upload & Analysis',
         'Community Support'
       ],
-      buttonText: 'Start Free',
+      buttonText: 'Start Free Trial',
       planId: 'free'
     },
     {
       title: 'Premium',
-      price: '$19',
+      price: '₹999',
       period: '/ month',
-      description: 'For active job seekers who want unlimited access',
+      description: 'Full access to AI-powered job search with ₹500 discount available',
       features: [
-        'Unlimited Applications',
-        'AI-Generated Cover Letters',
-        'Advanced Job Matching',
+        'Unlimited CV Downloads',
+        'AI-Enhanced Job Matching',
+        'Job Description Integration',
+        'Enhanced CV with JD',
+        'Cover Letter Generation',
         'Email Open Tracking',
         'Priority Support',
-        'Custom CV Tailoring'
+        'Advanced Analytics'
       ],
       isPopular: true,
       buttonText: 'Go Premium',
       planId: 'premium'
-    },
-    {
-      title: 'Pro',
-      price: '$49',
-      period: '/ month',
-      description: 'Complete career advancement toolkit',
-      features: [
-        'Everything in Premium',
-        'Advanced Analytics Dashboard',
-        'AI Interview Preparation',
-        'Premium Cover Letter Templates',
-        'Career Path Planning',
-        'Dedicated Support',
-        'Priority Job Matching'
-      ],
-      buttonText: 'Go Pro',
-      planId: 'pro'
     }
   ]
 
@@ -66,7 +51,7 @@ export function Pricing() {
         </div>
 
         {/* Pricing Cards */}
-        <div className="grid gap-6 lg:grid-cols-3 max-w-6xl mx-auto">
+        <div className="grid gap-6 lg:grid-cols-2 max-w-4xl mx-auto">
           {pricingPlans.map((plan, index) => (
             <PricingCard key={index} {...plan} />
           ))}
