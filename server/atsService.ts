@@ -23,10 +23,48 @@ export class ATSService {
       .trim();
   }
 
-  // Step 1: Extract keywords from job description using OpenAI
+  // Fallback keyword extraction using simple pattern matching
+  private static extractKeywordsFallback(jobDescription: string): { must_have: string[]; nice_to_have: string[] } {
+    const text = jobDescription.toLowerCase();
+    const must_have: string[] = [];
+    const nice_to_have: string[] = [];
+
+    // Common technical skills patterns
+    const skillPatterns = [
+      /\b(python|java|javascript|react|angular|vue|node\.?js|typescript|sql|mysql|postgresql|mongodb|aws|azure|gcp|docker|kubernetes|git|linux|html|css)\b/g,
+      /\b(project management|agile|scrum|lean|kanban)\b/g,
+      /\b(machine learning|ai|data science|analytics|tableau|powerbi|excel)\b/g,
+      /\b(rest api|graphql|microservices|devops|ci\/cd)\b/g
+    ];
+
+    // Extract skills from text
+    const allSkills = new Set<string>();
+    skillPatterns.forEach(pattern => {
+      const matches = text.match(pattern);
+      if (matches) {
+        matches.forEach(match => allSkills.add(match.replace(/\./g, '')));
+      }
+    });
+
+    // Categorize based on context
+    const requiredKeywords = ['required', 'must have', 'essential', 'mandatory', 'need', 'necessary'];
+    const preferredKeywords = ['preferred', 'nice to have', 'bonus', 'plus', 'advantage', 'desired'];
+
+    // Simple categorization - split skills 70% must-have, 30% nice-to-have
+    const skillsArray = Array.from(allSkills);
+    const splitIndex = Math.ceil(skillsArray.length * 0.7);
+    
+    must_have.push(...skillsArray.slice(0, splitIndex));
+    nice_to_have.push(...skillsArray.slice(splitIndex));
+
+    return { must_have, nice_to_have };
+  }
+
+  // Step 1: Extract keywords from job description using OpenAI with fallback
   private static async extractKeywords(jobDescription: string): Promise<{ must_have: string[]; nice_to_have: string[] }> {
     if (!openai) {
-      throw new Error("OpenAI API not configured");
+      console.log("OpenAI API not configured, using fallback keyword extraction");
+      return this.extractKeywordsFallback(jobDescription);
     }
 
     const prompt = `Extract two lists of skills from this job description:
@@ -85,6 +123,11 @@ Response format:
       return { must_have: mustHave, nice_to_have: niceToHave };
     } catch (error) {
       console.error("Skills extraction error:", error);
+      // If OpenAI fails (quota exceeded, rate limits, etc.), use fallback
+      if (error instanceof Error && (error.message.includes('429') || error.message.includes('quota') || error.message.includes('rate limit'))) {
+        console.log("OpenAI quota/rate limit exceeded, using fallback keyword extraction");
+        return this.extractKeywordsFallback(jobDescription);
+      }
       throw new Error(`Failed to extract skills: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
