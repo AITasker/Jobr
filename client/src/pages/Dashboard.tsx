@@ -7,6 +7,7 @@ import { JDUpload } from '@/components/JDUpload'
 import { JobCard } from '@/components/JobCard'
 import { EnhancedCVDisplay } from '@/components/EnhancedCVDisplay'
 import { JobMatchSection } from '@/components/JobMatchSection'
+import { ATSScorer } from '@/components/ATSScorer'
 import { ApplicationTracker } from '@/components/ApplicationTracker'
 import { AddApplicationModal } from '@/components/AddApplicationModal'
 import { EditApplicationModal } from '@/components/EditApplicationModal'
@@ -920,12 +921,15 @@ export default function Dashboard() {
 
         {/* Main Content Tabs */}
         <Tabs defaultValue="jobs" value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-3 max-w-lg">
+          <TabsList className="grid w-full grid-cols-4 max-w-2xl">
             <TabsTrigger value="jobs" data-testid="tab-job-matches">
               Job Matches
             </TabsTrigger>
             <TabsTrigger value="search" data-testid="tab-job-search">
               Search Jobs
+            </TabsTrigger>
+            <TabsTrigger value="ats" data-testid="tab-ats-scorer">
+              ATS Scorer
             </TabsTrigger>
             <TabsTrigger value="applications" data-testid="tab-applications">
               Applications
@@ -1707,6 +1711,10 @@ AI Job Analysis
                 </CardContent>
               </Card>
             )}
+          </TabsContent>
+
+          <TabsContent value="ats" className="space-y-6">
+            <ATSScorer />
           </TabsContent>
 
           <TabsContent value="applications" className="space-y-6">
