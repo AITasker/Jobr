@@ -259,34 +259,88 @@ export class OpenAIService {
     const phoneMatch = originalText.match(phonePattern);
     const nameMatch = originalText.match(namePattern);
     
-    // Enhanced skills extraction with expanded dictionary
-    const techSkills = [
-      'javascript', 'typescript', 'python', 'java', 'react', 'angular', 'vue', 'svelte',
-      'node.js', 'express', 'fastify', 'nestjs', 'mongodb', 'postgresql', 'mysql', 'sql',
-      'html', 'css', 'sass', 'scss', 'tailwind', 'bootstrap', 'git', 'github', 'gitlab',
-      'docker', 'kubernetes', 'aws', 'azure', 'gcp', 'linux', 'windows', 'macos',
-      'figma', 'photoshop', 'illustrator', 'sketch', 'adobe', 'canva',
-      'c++', 'c#', 'go', 'rust', 'php', 'ruby', 'swift', 'kotlin', 'flutter', 'dart',
-      'redis', 'elasticsearch', 'graphql', 'rest', 'api', 'microservices',
-      'tensorflow', 'pytorch', 'machine learning', 'ai', 'data science',
-      'agile', 'scrum', 'devops', 'ci/cd', 'jenkins', 'github actions'
+    // Dynamic skills extraction - extract actual skill phrases from CV text
+    console.log("=== CV SKILLS EXTRACTION DEBUG ===");
+    console.log("CV text sample:", text.substring(0, 500) + "...");
+    
+    const foundSkills = new Set<string>();
+    
+    // Pattern 1: Extract skill phrases (2-4 words that look like skills)
+    const skillPhrasePatterns = [
+      // Management and business skills
+      /\b(program\s+management|project\s+management|product\s+management|stakeholder\s+management|client\s+management|vendor\s+management|risk\s+management|change\s+management|operations\s+management|team\s+leadership|business\s+analysis|process\s+optimization|cross.functional\s+coordination|strategic\s+planning|budget\s+management)\b/g,
+      
+      // Data and analytics skills  
+      /\b(data\s+driven\s+decision\s+making|sql\s+reporting|google\s+sheets\s+automation|predictive\s+analytics|data\s+analysis|business\s+intelligence|dashboard\s+development|kpi\s+tracking|performance\s+metrics|reporting\s+automation)\b/g,
+      
+      // Technical and tool skills
+      /\b(ai\s+tools\s+adoption|automation\s+tools|collaboration\s+tools|project\s+management\s+tools|reporting\s+tools|analytics\s+platforms|crm\s+systems|erp\s+systems|salesforce|tableau|powerbi|excel\s+proficiency|google\s+workspace|microsoft\s+office)\b/g,
+      
+      // Process and methodology skills
+      /\b(agile\s+methodology|scrum\s+framework|lean\s+processes|six\s+sigma|process\s+improvement|workflow\s+optimization|quality\s+assurance|compliance\s+management|risk\s+mitigation|change\s+management)\b/g,
+      
+      // Communication and soft skills
+      /\b(stakeholder\s+communication|client\s+relations|team\s+collaboration|presentation\s+skills|negotiation\s+skills|problem\s+solving|critical\s+thinking|analytical\s+skills|leadership\s+skills|communication\s+skills)\b/g,
+      
+      // Education and certifications
+      /\b(bachelor\s+degree|master\s+degree|mba|pmp\s+certification|agile\s+certification|scrum\s+master|project\s+management\s+certification|six\s+sigma\s+certification)\b/g
     ];
     
-    const softSkills = [
-      'leadership', 'communication', 'teamwork', 'problem solving', 'project management',
-      'analytical', 'creative', 'organized', 'detail-oriented', 'time management'
-    ];
-    
-    const allSkills = [...techSkills, ...softSkills];
-    const foundSkills = allSkills.filter(skill => {
-      const skillVariants = [
-        skill,
-        skill.replace('.js', ''),
-        skill.replace('-', ' '),
-        skill.replace(' ', '-')
-      ];
-      return skillVariants.some(variant => text.includes(variant));
+    // Extract skill phrases
+    skillPhrasePatterns.forEach(pattern => {
+      const matches = text.match(pattern);
+      if (matches) {
+        matches.forEach(match => {
+          // Normalize and capitalize properly
+          const skill = match.replace(/\s+/g, ' ').trim()
+            .split(' ')
+            .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+            .join(' ');
+          foundSkills.add(skill);
+          console.log("Found skill phrase:", skill);
+        });
+      }
     });
+    
+    // Pattern 2: Extract single important skills/tools
+    const singleSkillPatterns = [
+      /\b(excel|powerbi|tableau|salesforce|jira|confluence|slack|teams|sharepoint|dynamics|sap|oracle|aws|azure|python|sql|javascript|react|angular|vue|mongodb|postgresql|mysql|git|docker|kubernetes|linux|agile|scrum|kanban|devops|figma|photoshop|illustrator)\b/g
+    ];
+    
+    singleSkillPatterns.forEach(pattern => {
+      const matches = text.match(pattern);
+      if (matches) {
+        matches.forEach(match => {
+          const skill = match.charAt(0).toUpperCase() + match.slice(1);
+          foundSkills.add(skill);
+          console.log("Found single skill:", skill);
+        });
+      }
+    });
+    
+    // Pattern 3: Extract from bullet points and structured sections
+    const lines = originalText.split('\n');
+    lines.forEach(line => {
+      const trimmedLine = line.trim();
+      // Look for lines that start with bullets or seem like skill lists
+      if (trimmedLine.match(/^[•·◦▪▫-]\s*/) || trimmedLine.includes('skills') || trimmedLine.includes('experience')) {
+        const skillWords = trimmedLine.replace(/^[•·◦▪▫-]\s*/, '')
+          .split(/[,|&]/)
+          .map(s => s.trim())
+          .filter(s => s.length > 3 && s.length < 50);
+        
+        skillWords.forEach(skill => {
+          if (skill.includes(' ') || skill.length > 4) {
+            foundSkills.add(skill);
+            console.log("Found from bullet/list:", skill);
+          }
+        });
+      }
+    });
+    
+    const skillsArray = Array.from(foundSkills);
+    console.log("Total extracted skills:", skillsArray);
+    console.log("=== END CV SKILLS EXTRACTION DEBUG ===");
     
     // Try to extract basic experience information
     let experienceText = 'Experience details not available without AI parsing.';
@@ -316,7 +370,7 @@ export class OpenAIService {
       name: nameMatch ? nameMatch[1] : null,
       email: emailMatch ? emailMatch[0] : null,
       phone: phoneMatch ? phoneMatch[0] : null,
-      skills: foundSkills.slice(0, 15), // Limit to 15 skills
+      skills: skillsArray.slice(0, 15), // Limit to 15 skills
       experience: experienceText,
       education: educationText,
       summary: null,
