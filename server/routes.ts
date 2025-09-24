@@ -3201,6 +3201,74 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ATS Baseline Score calculation endpoint - shows CV quality without JD
+  app.post('/api/ats/baseline', isAuthenticated, async (req: any, res: any) => {
+    try {
+      // Validate request body
+      const { resumeText } = req.body;
+      if (!resumeText || typeof resumeText !== 'string') {
+        return res.status(400).json({
+          success: false,
+          message: "Resume text is required"
+        });
+      }
+
+      // Calculate baseline score based on CV quality factors
+      const calculateBaselineScore = (cvText: string): number => {
+        let score = 40; // Base score
+        
+        // Content length factor (shows completeness)
+        const length = cvText.length;
+        if (length > 2000) score += 15;
+        else if (length > 1000) score += 10;
+        else if (length > 500) score += 5;
+        
+        // Structure factors (common CV sections)
+        const sections = [
+          /experience|work|employment/i,
+          /education|degree|university|college/i,
+          /skills|competenc|technical/i,
+          /contact|email|phone/i,
+          /project|achievement/i
+        ];
+        
+        sections.forEach(pattern => {
+          if (pattern.test(cvText)) score += 6;
+        });
+        
+        // Professional keywords bonus
+        const professionalKeywords = [
+          /management|lead|senior|junior/i,
+          /software|technical|engineer|developer/i,
+          /project|team|collaboration/i,
+          /certification|qualified|trained/i
+        ];
+        
+        professionalKeywords.forEach(pattern => {
+          if (pattern.test(cvText)) score += 3;
+        });
+        
+        return Math.min(Math.max(score, 30), 85); // Keep in reasonable range
+      };
+
+      const baselineScore = calculateBaselineScore(resumeText);
+
+      res.json({
+        success: true,
+        data: {
+          baseline_score: baselineScore,
+          explanation: `Baseline CV score of ${baselineScore}% based on content completeness, structure, and professional keywords. Add a job description to see detailed matching analysis.`
+        }
+      });
+    } catch (error) {
+      console.error("Baseline score calculation error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Failed to calculate baseline score"
+      });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }
