@@ -37,7 +37,7 @@ export function Header({ showAuth = true }: HeaderProps) {
 
   return (
     <header className="border-b bg-gradient-to-r from-background via-background to-muted/20 backdrop-blur-md supports-[backdrop-filter]:bg-background/80 shadow-sm">
-      <div className="container mx-auto px-4 py-2">
+      <div className="container mx-auto px4 py-2">
         <div className="flex items-center justify-between">
           {/* Logo */}
           <Link
@@ -45,7 +45,7 @@ export function Header({ showAuth = true }: HeaderProps) {
             className="flex items-center gap-3 hover:opacity-90 transition-opacity duration-200"
             data-testid="link-logo"
           >
-            <img src={jobrLogo} alt="Jobr Logo" className="h-21 w-40" />
+            <img src={jobrLogo} alt="Jobr Logo" className="h-32 w-auto" />
           </Link>
 
           {/* Navigation */}
