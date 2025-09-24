@@ -182,14 +182,32 @@ Response format:
     const matched: string[] = [];
     const missing: string[] = [];
 
+    console.log("=== KEYWORD MATCHING DEBUG ===");
+    console.log("Clean resume text length:", cleanResumeText.length);
+    console.log("Clean resume sample:", cleanResumeText.substring(0, 400) + "...");
+    console.log("Keywords to match:", keywords);
+
     keywords.forEach(keyword => {
+      const keywordLower = keyword.toLowerCase();
       // Exact match: check if keyword appears as substring in clean resume text
-      if (cleanResumeText.includes(keyword.toLowerCase())) {
+      if (cleanResumeText.includes(keywordLower)) {
+        console.log(`✓ MATCH: "${keyword}" found in resume`);
         matched.push(keyword);
       } else {
+        console.log(`✗ MISS: "${keyword}" NOT found in resume`);
+        // Help debug by showing if any part of the keyword is present
+        const words = keywordLower.split(' ');
+        const partialMatches = words.filter(word => cleanResumeText.includes(word));
+        if (partialMatches.length > 0) {
+          console.log(`  → Partial matches found: ${partialMatches.join(', ')}`);
+        }
         missing.push(keyword);
       }
     });
+
+    console.log("Final matched:", matched);
+    console.log("Final missing:", missing);
+    console.log("=== END KEYWORD MATCHING DEBUG ===");
 
     return { matched, missing };
   }
@@ -227,15 +245,26 @@ Response format:
   // Main public method - implements exact specification flow
   static async calculateATSScore(jobDescription: string, resumeText: string): Promise<ATSScoreResult> {
     try {
+      console.log("=== ATS SCORE CALCULATION START ===");
+      console.log("Job description length:", jobDescription.length);
+      console.log("Resume text length:", resumeText.length);
+      
       // Step 1: Clean and normalize text
       const cleanedJD = this.cleanText(jobDescription);
       const cleanedResume = this.cleanText(resumeText);
 
       // Step 2: Extract keywords using AI
       const { must_have, nice_to_have } = await this.extractKeywords(jobDescription);
+      
+      console.log("EXTRACTED KEYWORDS:");
+      console.log("Must-have:", must_have);
+      console.log("Nice-to-have:", nice_to_have);
 
       // Step 3: Match keywords locally using exact matching
+      console.log("MATCHING MUST-HAVE KEYWORDS:");
       const mustHaveMatching = this.matchKeywords(must_have, resumeText);
+      
+      console.log("MATCHING NICE-TO-HAVE KEYWORDS:");
       const niceToHaveMatching = this.matchKeywords(nice_to_have, resumeText);
 
       // Step 4: Calculate score using specification formula
@@ -245,6 +274,12 @@ Response format:
         mustHaveMatching.matched,
         niceToHaveMatching.matched
       );
+
+      console.log("FINAL SCORE CALCULATION:");
+      console.log(`Must-have: ${mustHaveMatching.matched.length}/${must_have.length}`);
+      console.log(`Nice-to-have: ${niceToHaveMatching.matched.length}/${nice_to_have.length}`);
+      console.log(`Final ATS Score: ${score}%`);
+      console.log("=== ATS SCORE CALCULATION END ===");
 
       // Step 5: Return result in specification format
       return {
