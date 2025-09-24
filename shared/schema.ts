@@ -56,6 +56,11 @@ export const cvs = pgTable("cvs", {
   skills: text("skills").array(),
   experience: text("experience"),
   education: text("education"),
+  // Job Description integration
+  jobDescription: text("job_description"), // Target job description
+  enhancedCv: text("enhanced_cv"), // CV tailored with JD context
+  jdAnalysis: jsonb("jd_analysis"), // AI analysis of JD requirements
+  enhancedSkills: text("enhanced_skills").array(), // Combined CV + JD skills
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => [

@@ -3,6 +3,7 @@ import { useLocation } from 'wouter'
 import { Header } from '@/components/Header'
 import { useAuth } from '@/hooks/useAuth'
 import { CVUpload } from '@/components/CVUpload'
+import { JDUpload } from '@/components/JDUpload'
 import { JobCard } from '@/components/JobCard'
 import { ApplicationTracker } from '@/components/ApplicationTracker'
 import { AddApplicationModal } from '@/components/AddApplicationModal'
@@ -539,8 +540,8 @@ export default function Dashboard() {
                 </div>
               </CardHeader>
               <CardContent>
-                {/* PDF Output Display */}
-                {cvData && cvData.originalContent && (
+                {/* CV Content Display */}
+                {cvData && cvData.parsedData && (
                   <div className="mb-6 border rounded-lg p-4 bg-muted/50">
                     <div className="flex items-center justify-between mb-3">
                       <h4 className="text-sm font-medium text-foreground flex items-center gap-2">
@@ -553,7 +554,7 @@ export default function Dashboard() {
                     </div>
                     <div className="bg-white dark:bg-gray-900 border rounded p-4 min-h-[300px] max-h-[400px] overflow-auto">
                       <pre className="text-sm text-foreground whitespace-pre-wrap font-mono leading-relaxed">
-                        {cvData.originalContent}
+                        {typeof cvData.parsedData === 'string' ? cvData.parsedData : JSON.stringify(cvData.parsedData, null, 2)}
                       </pre>
                     </div>
                   </div>
@@ -662,6 +663,19 @@ export default function Dashboard() {
                 )}
               </CardContent>
             </Card>
+
+            {/* Job Description Integration */}
+            {hasCvData && hasValidCvForMatching && (
+              <JDUpload 
+                cvId={cvData?.id || ''}
+                onJDIntegrated={() => {
+                  // Refresh CV and job matches data
+                  queryClient.invalidateQueries({ queryKey: ['/api/cv'] })
+                  queryClient.invalidateQueries({ queryKey: ['/api/jobs/matched'] })
+                }}
+                onJobMatchingTrigger={handleJobMatchingTrigger}
+              />
+            )}
           </TabsContent>
 
           <TabsContent value="search" className="space-y-6">
