@@ -43,7 +43,7 @@ export function Header({ showAuth = true }: HeaderProps) {
             className="flex items-center gap-3 hover:opacity-90 transition-opacity duration-200"
             data-testid="link-logo"
           >
-            <img src={jobrLogo} alt="Jobr Logo" className="h-12 w-auto" />
+            <img src={jobrLogo} alt="Jobr Logo" className="h-16 w-auto" />
           </Link>
 
           {/* Navigation */}
