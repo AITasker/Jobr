@@ -1,71 +1,88 @@
-import { Button } from '@/components/ui/button'
-import { ThemeToggle } from '@/components/ThemeToggle'
-import { useAuth } from '@/hooks/useAuth'
-import { User, Bell } from 'lucide-react'
-import jobrLogo from '@assets/2025-removebg-preview_1758092942885.png'
-import { Badge } from '@/components/ui/badge'
-import { Link } from 'wouter'
+import { Button } from "@/components/ui/button";
+import { ThemeToggle } from "@/components/ThemeToggle";
+import { useAuth } from "@/hooks/useAuth";
+import { User, Bell } from "lucide-react";
+import jobrLogo from "@assets/2025-removebg-preview_1758092942885.png";
+import { Badge } from "@/components/ui/badge";
+import { Link } from "wouter";
 
 interface HeaderProps {
-  showAuth?: boolean
+  showAuth?: boolean;
 }
 
 export function Header({ showAuth = true }: HeaderProps) {
-  const { user, isAuthenticated } = useAuth()
-  
+  const { user, isAuthenticated } = useAuth();
+
   // Type guard for user object
-  const typedUser = user as {
-    plan?: string
-    firstName?: string
-    lastName?: string
-    email?: string
-  } | undefined
-  
+  const typedUser = user as
+    | {
+        plan?: string;
+        firstName?: string;
+        lastName?: string;
+        email?: string;
+      }
+    | undefined;
+
   const handleLogin = () => {
-    window.location.href = '/api/login'
-  }
+    window.location.href = "/api/login";
+  };
 
   const handleLogout = () => {
-    window.location.href = '/api/logout'
-  }
+    window.location.href = "/api/logout";
+  };
 
   const handleProfileClick = () => {
-    console.log('Profile clicked')
-  }
+    console.log("Profile clicked");
+  };
 
   return (
     <header className="border-b bg-gradient-to-r from-background via-background to-muted/20 backdrop-blur-md supports-[backdrop-filter]:bg-background/80 shadow-sm">
       <div className="container mx-auto px-4 py-2">
         <div className="flex items-center justify-between">
           {/* Logo */}
-          <Link 
-            href={isAuthenticated ? "/dashboard" : "/"} 
+          <Link
+            href={isAuthenticated ? "/dashboard" : "/"}
             className="flex items-center gap-3 hover:opacity-90 transition-opacity duration-200"
             data-testid="link-logo"
           >
-            <img src={jobrLogo} alt="Jobr Logo" className="h-30 w-auto" />
+            <img src={jobrLogo} alt="Jobr Logo" className="h-20 w-20" />
           </Link>
 
           {/* Navigation */}
           <nav className="hidden md:flex items-center gap-6">
             {isAuthenticated ? (
               <>
-                <a href="/dashboard" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
+                <a
+                  href="/dashboard"
+                  className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+                >
                   Dashboard
                 </a>
-                <a href="/billing" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
+                <a
+                  href="/billing"
+                  className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+                >
                   Billing
                 </a>
               </>
             ) : (
               <>
-                <a href="#features" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
+                <a
+                  href="#features"
+                  className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+                >
                   Features
                 </a>
-                <a href="#pricing" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
+                <a
+                  href="#pricing"
+                  className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+                >
                   Pricing
                 </a>
-                <a href="#about" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
+                <a
+                  href="#about"
+                  className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+                >
                   About
                 </a>
               </>
@@ -78,11 +95,21 @@ export function Header({ showAuth = true }: HeaderProps) {
               <>
                 {isAuthenticated && user ? (
                   <>
-                    <Button variant="ghost" size="icon" data-testid="button-notifications">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      data-testid="button-notifications"
+                    >
                       <Bell className="h-4 w-4" />
                     </Button>
                     <div className="flex items-center gap-2">
-                      <Badge variant="secondary" className="bg-gradient-to-r from-blue-100 to-purple-100 text-blue-800 border-blue-200" data-testid="badge-user-plan">{typedUser?.plan || 'Free'}</Badge>
+                      <Badge
+                        variant="secondary"
+                        className="bg-gradient-to-r from-blue-100 to-purple-100 text-blue-800 border-blue-200"
+                        data-testid="badge-user-plan"
+                      >
+                        {typedUser?.plan || "Free"}
+                      </Badge>
                       <Button
                         variant="ghost"
                         size="sm"
@@ -92,7 +119,9 @@ export function Header({ showAuth = true }: HeaderProps) {
                       >
                         <User className="h-4 w-4" />
                         <span className="hidden sm:inline">
-                          {typedUser?.firstName || typedUser?.email?.split('@')[0] || 'User'}
+                          {typedUser?.firstName ||
+                            typedUser?.email?.split("@")[0] ||
+                            "User"}
                         </span>
                       </Button>
                       <Button
@@ -131,5 +160,5 @@ export function Header({ showAuth = true }: HeaderProps) {
         </div>
       </div>
     </header>
-  )
+  );
 }
