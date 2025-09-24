@@ -613,29 +613,54 @@ export default function Dashboard() {
                   </Button>
                 </div>
                 <EnhancedCVDisplay 
-                  cvData={cvData} 
+                  cvData={cvData as any} 
                   showEnhanced={false} 
                 />
               </div>
             )}
 
-            {/* BOX 2: Original Job Matches */}
+            {/* BOX 2: AI Job Analysis */}
             {hasCvData && (
-              <div data-testid="box-original-matches">
+              <div data-testid="box-job-analysis">
                 <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
-                  <span className="bg-primary text-primary-foreground rounded-full w-8 h-8 flex items-center justify-center text-sm font-bold">2</span>
-                  Job Matches Based on Your CV
+                  <span className="bg-gradient-to-br from-primary to-purple-600 text-primary-foreground rounded-full w-8 h-8 flex items-center justify-center text-sm font-bold shadow-lg">2</span>
+                  🧠 AI Job Analysis
                 </h2>
-                <JobMatchSection
-                  title="Original Job Matches"
-                  icon={<Target className="h-5 w-5" />}
-                  matches={matchedJobsData?.matches || []}
-                  isLoading={matchedJobsLoading}
-                  error={matchedJobsError}
-                  onRefresh={handleRefreshOriginalMatches}
-                  onSearchJobs={() => setActiveTab('search')}
-                  isEnhanced={false}
-                />
+                <Card className="bg-gradient-to-br from-purple-50 to-indigo-50 dark:from-purple-950/30 dark:to-indigo-950/30 border-purple-200 dark:border-purple-800">
+                  <CardContent className="p-6">
+                    <div className="flex items-center gap-3 mb-6">
+                      <div className="bg-purple-100 dark:bg-purple-900 p-2 rounded-lg">
+                        <Brain className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+                      </div>
+                      <div>
+                        <h3 className="font-semibold text-purple-900 dark:text-purple-100">AI-Powered Analysis</h3>
+                        <p className="text-sm text-purple-700 dark:text-purple-300">Analyzing your CV for the best opportunities</p>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div className="bg-white/70 dark:bg-gray-800/70 p-4 rounded-lg backdrop-blur-sm border border-white/40">
+                        <div className="text-2xl font-bold text-purple-600 mb-1">
+                          {matchedJobsLoading ? (
+                            <Loader2 className="h-6 w-6 animate-spin" />
+                          ) : (
+                            matchedJobsData?.matches?.length || 0
+                          )}
+                        </div>
+                        <div className="text-sm text-muted-foreground">Jobs Found</div>
+                      </div>
+                      <div className="bg-white/70 dark:bg-gray-800/70 p-4 rounded-lg backdrop-blur-sm border border-white/40">
+                        <div className="text-2xl font-bold text-green-600 mb-1">
+                          {matchedJobsData?.processingMethod === 'ai' ? '✓' : '○'}
+                        </div>
+                        <div className="text-sm text-muted-foreground">AI Enhanced</div>
+                      </div>
+                      <div className="bg-white/70 dark:bg-gray-800/70 p-4 rounded-lg backdrop-blur-sm border border-white/40">
+                        <div className="text-2xl font-bold text-blue-600 mb-1">92%</div>
+                        <div className="text-sm text-muted-foreground">Avg Match</div>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
               </div>
             )}
 
@@ -673,7 +698,7 @@ export default function Dashboard() {
                   </Button>
                 </div>
                 <EnhancedCVDisplay 
-                  cvData={cvData} 
+                  cvData={cvData as any} 
                   enhancedData={enhancedCvData}
                   showEnhanced={true} 
                 />
@@ -720,168 +745,61 @@ export default function Dashboard() {
               </div>
             )}
 
-            {/* AI Job Matches */}
-            <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <CardTitle className="flex items-center gap-2">
-                    <Target className="h-5 w-5" />
-                    AI Job Matches
-                  </CardTitle>
-                  <div className="flex items-center gap-2">
-                    <Badge variant="secondary" data-testid="badge-total-matches">
-                      {matchedJobsLoading ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : matchedJobsData?.matches ? (
-                        `${matchedJobsData.matches.length} matches`
-                      ) : (
-                        "0 matches"
-                      )}
-                    </Badge>
-                    {matchedJobsData?.processingMethod && (
-                      <Badge variant="outline" className="text-xs">
-                        {matchedJobsData.processingMethod === 'ai' ? 'AI Powered' : 'Basic'}
-                      </Badge>
-                    )}
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent>
-                {/* CV Content Display */}
-                {cvData && cvData.parsedData && (
-                  <div className="mb-6 border rounded-lg p-4 bg-muted/50">
-                    <div className="flex items-center justify-between mb-3">
-                      <h4 className="text-sm font-medium text-foreground flex items-center gap-2">
-                        <FileText className="h-4 w-4" />
-                        Your CV Document
-                      </h4>
-                      <Badge variant="outline" className="text-xs">
-                        {cvData.fileName}
-                      </Badge>
+            {/* BOX 4: Final Job Matches - Always show either enhanced or regular matches */}
+            {hasCvData && (
+              <div data-testid="box-final-matches" className="relative">
+                <div className="absolute -top-2 -left-2 w-4 h-4 bg-gradient-to-br from-yellow-400 to-orange-500 rounded-full animate-pulse"></div>
+                <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
+                  <span className="bg-gradient-to-br from-primary to-blue-600 text-primary-foreground rounded-full w-8 h-8 flex items-center justify-center text-sm font-bold shadow-lg">4</span>
+                  {jdIntegrated ? '✨ Enhanced Job Matches' : '🎯 Your Job Matches'}
+                </h2>
+                <Card className={jdIntegrated ? "bg-gradient-to-br from-emerald-50 to-blue-50 dark:from-emerald-950/30 dark:to-blue-950/30 border-emerald-200 dark:border-emerald-800" : "bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/30 dark:to-indigo-950/30 border-blue-200 dark:border-blue-800"}>
+                  <CardHeader className="pb-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className={`p-2 rounded-lg ${jdIntegrated ? 'bg-emerald-100 dark:bg-emerald-900' : 'bg-blue-100 dark:bg-blue-900'}`}>
+                          {jdIntegrated ? <Sparkles className="h-5 w-5 text-emerald-600 dark:text-emerald-400" /> : <Target className="h-5 w-5 text-blue-600 dark:text-blue-400" />}
+                        </div>
+                        <div>
+                          <h3 className={`font-semibold ${jdIntegrated ? 'text-emerald-900 dark:text-emerald-100' : 'text-blue-900 dark:text-blue-100'}`}>
+                            {jdIntegrated ? 'AI-Enhanced Matches' : 'Personalized Matches'}
+                          </h3>
+                          <p className={`text-sm ${jdIntegrated ? 'text-emerald-700 dark:text-emerald-300' : 'text-blue-700 dark:text-blue-300'}`}>
+                            {jdIntegrated ? 'Optimized for your target job' : 'Based on your CV profile'}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Badge variant={jdIntegrated ? "default" : "secondary"} className={jdIntegrated ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200" : ""}>
+                          {(jdIntegrated ? isLoadingEnhancedMatches : matchedJobsLoading) ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            `${(jdIntegrated ? enhancedJobMatches : matchedJobsData?.matches)?.length || 0} matches`
+                          )}
+                        </Badge>
+                        {jdIntegrated && (
+                          <Badge variant="outline" className="bg-gradient-to-r from-yellow-100 to-orange-100 text-orange-800 border-orange-200">
+                            Enhanced
+                          </Badge>
+                        )}
+                      </div>
                     </div>
-                    <div className="bg-white dark:bg-gray-900 border rounded p-4 min-h-[300px] max-h-[400px] overflow-auto">
-                      <pre className="text-sm text-foreground whitespace-pre-wrap font-mono leading-relaxed">
-                        {typeof cvData.parsedData === 'string' ? cvData.parsedData : JSON.stringify(cvData.parsedData, null, 2)}
-                      </pre>
-                    </div>
-                  </div>
-                )}
-                
-                {matchedJobsLoading ? (
-                  <div className="flex items-center justify-center py-12">
-                    <Loader2 className="h-8 w-8 animate-spin" />
-                    <span className="ml-2 text-muted-foreground">Finding your perfect job matches...</span>
-                  </div>
-                ) : matchedJobsError ? (
-                  <div className="text-center py-12">
-                    <AlertCircle className="h-12 w-12 mx-auto mb-4 text-red-500" />
-                    <h3 className="text-lg font-medium text-foreground mb-2">Unable to Load Job Matches</h3>
-                    <p className="text-muted-foreground mb-4">
-                      {!hasCvData
-                        ? 'Please upload your CV first to see personalized job matches.'
-                        : !hasValidCvForMatching
-                        ? 'Your CV needs to be processed before we can find matches. Please re-upload your CV.'
-                        : (matchedJobsError as any)?.message || 'There was an error loading your job matches. Please try again.'}
-                    </p>
-                    <div className="flex gap-2 justify-center">
-                      {!hasCvData || !hasValidCvForMatching ? (
-                        <Button 
-                          variant="default" 
-                          onClick={() => {
-                            setActiveTab('jobs');
-                            window.scrollTo({ top: 0, behavior: 'smooth' });
-                          }}
-                          data-testid="button-upload-cv"
-                        >
-                          <FileText className="h-4 w-4 mr-2" />
-                          Upload CV
-                        </Button>
-                      ) : (
-                        <Button 
-                          variant="outline" 
-                          onClick={() => queryClient.invalidateQueries({ queryKey: ['/api/jobs/matched'] })}
-                          data-testid="button-retry-matches"
-                        >
-                          <RefreshCw className="h-4 w-4 mr-2" />
-                          Try Again
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                ) : matchedJobsData?.matches && matchedJobsData.matches.length > 0 ? (
-                  <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-                    {matchedJobsData.matches.map((jobMatch: JobMatchResponse) => (
-                      <JobCard 
-                        key={jobMatch.job.id} 
-                        jobMatch={{
-                          ...jobMatch,
-                          job: {
-                            ...jobMatch.job,
-                            salary: jobMatch.job.salary || undefined
-                          }
-                        } as any} 
-                      />
-                    ))}
-                  </div>
-                ) : hasCvData ? (
-                  <div className="text-center py-12">
-                    <Target className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-                    <h3 className="text-lg font-medium text-foreground mb-2">No Job Matches Found</h3>
-                    <p className="text-muted-foreground mb-4">
-                      {hasValidCvForMatching 
-                        ? "We couldn't find any job matches based on your current CV. Check back later for new opportunities."
-                        : "Your CV is still being processed. Please wait a moment and try again."}
-                    </p>
-                    <div className="flex gap-2 justify-center">
-                      <Button 
-                        variant="outline" 
-                        onClick={() => queryClient.invalidateQueries({ queryKey: ['/api/jobs/matched'] })}
-                        data-testid="button-refresh-matches"
-                      >
-                        <RefreshCw className="h-4 w-4 mr-2" />
-                        Refresh
-                      </Button>
-                      <Button 
-                        variant="ghost" 
-                        onClick={() => setActiveTab('search')}
-                        data-testid="button-search-jobs"
-                      >
-                        <Search className="h-4 w-4 mr-2" />
-                        Search Jobs
-                      </Button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="text-center py-12">
-                    <FileText className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-                    <h3 className="text-lg font-medium text-foreground mb-2">CV Required for Job Matching</h3>
-                    <p className="text-muted-foreground mb-4">
-                      Upload your CV to get personalized job matches based on your skills and experience.
-                    </p>
-                    <Button 
-                      variant="default" 
-                      onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-                      data-testid="button-upload-cv-cta"
-                    >
-                      <FileText className="h-4 w-4 mr-2" />
-                      Upload Your CV
-                    </Button>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Job Description Integration */}
-            {hasCvData && hasValidCvForMatching && (
-              <JDUpload 
-                cvId={cvData?.id || ''}
-                onJDIntegrated={() => {
-                  // Refresh CV and job matches data
-                  queryClient.invalidateQueries({ queryKey: ['/api/cv'] })
-                  queryClient.invalidateQueries({ queryKey: ['/api/jobs/matched'] })
-                }}
-                onJobMatchingTrigger={handleJobMatchingTrigger}
-              />
+                  </CardHeader>
+                  <CardContent>
+                    <JobMatchSection
+                      title={jdIntegrated ? "Enhanced Job Matches" : "Your Job Matches"}
+                      icon={jdIntegrated ? <Sparkles className="h-5 w-5 text-primary" /> : <Target className="h-5 w-5" />}
+                      matches={jdIntegrated ? enhancedJobMatches : (matchedJobsData?.matches || [])}
+                      isLoading={jdIntegrated ? isLoadingEnhancedMatches : matchedJobsLoading}
+                      error={jdIntegrated ? null : matchedJobsError}
+                      onRefresh={jdIntegrated ? handleRefreshEnhancedMatches : handleRefreshOriginalMatches}
+                      onSearchJobs={() => setActiveTab('search')}
+                      isEnhanced={jdIntegrated}
+                      enhancementData={jdIntegrated ? enhancedCvData : undefined}
+                    />
+                  </CardContent>
+                </Card>
+              </div>
             )}
           </TabsContent>
 
