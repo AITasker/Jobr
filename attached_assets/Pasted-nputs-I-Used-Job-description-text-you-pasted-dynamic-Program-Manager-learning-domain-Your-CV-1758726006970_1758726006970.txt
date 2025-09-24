@@ -1,0 +1,97 @@
+nputs I Used
+
+Job description text you pasted (“dynamic Program Manager…learning domain…”).
+
+Your CV text from the PDF you uploaded (parsed to plain text first).
+
+2️⃣ Keyword Extraction
+
+I read the job description and pulled out two buckets:
+
+Must-have (critical to do the job)
+
+Program/Operations management experience (≥ 2 years)
+
+Problem-solving / execution focus
+
+Stakeholder management & communication
+
+Designing & scaling operational processes
+
+Data-driven approach with Excel/analytics
+
+Bachelor’s degree (or equivalent)
+
+Nice-to-have (preferred but not mandatory)
+
+Knowledge of educational processes / EdTech
+
+Curriculum / content / student-progression experience
+
+Collaboration with academic/content teams
+
+MBA
+
+3️⃣ Matching Your CV
+
+Then I compared those keywords to the plain-text version of your CV.
+
+Matched must-haves
+
+“Program Management | Business Analysis | Agile & Scrum …” → program management
+
+“Led cross-functional coordination…solving bottlenecks…” → problem-solving / execution
+
+“Stakeholder & Client Management …” → stakeholder management
+
+“Directed cross-functional coordination… streamlined workflows…” → design & scale processes
+
+“SQL Reporting | Dashboarding | Google Sheets Automation | Predictive Analytics” → data-driven / Excel-like analytics
+
+“B.Tech, NIT Meghalaya” → bachelor’s degree
+
+→ 6 of 6 must-haves matched
+
+Matched nice-to-haves
+
+PhysicsWallah / UpGrad roles → EdTech exposure
+
+“program schedules, evaluations, learner support” → curriculum / student progression-type work
+
+“Coordinated with academic institutes” → collaboration with academic teams
+
+→ 3 of 4 nice-to-haves matched (missing only “MBA”).
+
+4️⃣ Scoring Formula
+
+I use a fixed weighted formula:
+
+must_score  = (matched_must / total_must) * 70
+nice_score  = (matched_nice / total_nice) * 30
+ATS_score   = round(must_score + nice_score)
+
+
+Plugging in the numbers:
+
+must_score  = (6 / 6) * 70  = 70
+nice_score  = (3 / 4) * 30  = 22.5
+Total       = 92.5 → round to 93
+
+5️⃣ Output
+
+That’s why I reported:
+
+{
+  "ats_score": 93,
+  "matched_must_haves": [...],
+  "missing_must_haves": [],
+  "matched_nice_haves": [...],
+  "missing_nice_haves": ["MBA"],
+  "explanation": "Matched 6/6 must-haves and 3/4 nice-to-haves."
+}
+
+Key Takeaways
+
+Deterministic: no hidden AI judgment—just keyword matching + simple math.
+
+Why your app shows 43 %: likely stricter matching, different weights, or parsing issues (e.g., didn’t recognise EdTech experience as “curriculum/student progression,” or failed to parse the PDF text).
