@@ -22,6 +22,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Separator } from '@/components/ui/separator'
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { apiRequest, queryClient } from '@/lib/queryClient'
 import { useToast } from '@/hooks/use-toast'
@@ -151,6 +152,7 @@ export default function Dashboard() {
   const [enhancedCvData, setEnhancedCvData] = useState<any>(null)
   const [enhancedJobMatches, setEnhancedJobMatches] = useState<JobMatchResponse[]>([])
   const [isLoadingEnhancedMatches, setIsLoadingEnhancedMatches] = useState(false)
+  const [showNewCVUpload, setShowNewCVUpload] = useState(false)
 
   // All queries must be called before any conditional logic
   const { data: cvData, isLoading: cvLoading, error: cvError } = useQuery<CVResponse | null>({
@@ -332,6 +334,64 @@ export default function Dashboard() {
     if (jdIntegrated && enhancedCvData) {
       handleJDIntegrated(enhancedCvData)
     }
+  }
+
+  const handleDownloadEnhancedCV = () => {
+    if (!enhancedCvData || !enhancedCvData.enhancedCv) {
+      toast({
+        title: "Download Failed",
+        description: "Enhanced CV content not available for download.",
+        variant: "destructive"
+      })
+      return
+    }
+
+    try {
+      // Create downloadable content
+      const content = enhancedCvData.enhancedCv
+      const blob = new Blob([content], { type: 'text/plain' })
+      const url = window.URL.createObjectURL(blob)
+      
+      // Create download link
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `Enhanced-CV-${new Date().toISOString().split('T')[0]}.txt`
+      document.body.appendChild(link)
+      link.click()
+      
+      // Cleanup
+      document.body.removeChild(link)
+      window.URL.revokeObjectURL(url)
+      
+      toast({
+        title: "Download Started",
+        description: "Your enhanced CV has been downloaded successfully.",
+      })
+    } catch (error) {
+      console.error('Download error:', error)
+      toast({
+        title: "Download Failed",
+        description: "There was an error downloading your enhanced CV. Please try again.",
+        variant: "destructive"
+      })
+    }
+  }
+
+  const handleNewCVUpload = () => {
+    // Reset all CV-related state
+    setJdIntegrated(false)
+    setEnhancedCvData(null)
+    setEnhancedJobMatches([])
+    setShowNewCVUpload(false)
+    
+    // Invalidate queries to refresh data
+    queryClient.invalidateQueries({ queryKey: ['/api/cv'] })
+    queryClient.invalidateQueries({ queryKey: ['/api/jobs/matched'] })
+    
+    toast({
+      title: "CV Upload Ready",
+      description: "You can now upload a new CV. Your previous data has been cleared.",
+    })
   }
 
   const handleSearchSuggestionSelect = (suggestion: SearchSuggestion) => {
@@ -537,10 +597,21 @@ export default function Dashboard() {
             {/* BOX 1: Uploaded CV */}
             {hasCvData && (
               <div data-testid="box-uploaded-cv">
-                <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
-                  <span className="bg-primary text-primary-foreground rounded-full w-8 h-8 flex items-center justify-center text-sm font-bold">1</span>
-                  Your Uploaded CV
-                </h2>
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-xl font-semibold flex items-center gap-2">
+                    <span className="bg-primary text-primary-foreground rounded-full w-8 h-8 flex items-center justify-center text-sm font-bold">1</span>
+                    Your Uploaded CV
+                  </h2>
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => setShowNewCVUpload(true)}
+                    data-testid="button-upload-new-cv"
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    Upload New CV
+                  </Button>
+                </div>
                 <EnhancedCVDisplay 
                   cvData={cvData} 
                   showEnhanced={false} 
@@ -586,10 +657,21 @@ export default function Dashboard() {
             {/* BOX 3: Enhanced CV (after JD integration) */}
             {jdIntegrated && enhancedCvData && (
               <div data-testid="box-enhanced-cv">
-                <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
-                  <span className="bg-primary text-primary-foreground rounded-full w-8 h-8 flex items-center justify-center text-sm font-bold">3</span>
-                  Enhanced CV with Job Description
-                </h2>
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-xl font-semibold flex items-center gap-2">
+                    <span className="bg-primary text-primary-foreground rounded-full w-8 h-8 flex items-center justify-center text-sm font-bold">3</span>
+                    Enhanced CV with Job Description
+                  </h2>
+                  <Button 
+                    variant="default" 
+                    size="sm"
+                    onClick={() => handleDownloadEnhancedCV()}
+                    data-testid="button-download-enhanced-cv"
+                  >
+                    <FileText className="h-4 w-4 mr-2" />
+                    Download Enhanced CV
+                  </Button>
+                </div>
                 <EnhancedCVDisplay 
                   cvData={cvData} 
                   enhancedData={enhancedCvData}
@@ -1293,6 +1375,24 @@ export default function Dashboard() {
           isOpen={isEditApplicationModalOpen}
           onOpenChange={setIsEditApplicationModalOpen}
         />
+
+        {/* New CV Upload Modal */}
+        <Dialog open={showNewCVUpload} onOpenChange={setShowNewCVUpload}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Upload New CV</DialogTitle>
+              <DialogDescription>
+                Upload a new CV to replace your current one. This will reset your job matches and any enhanced CV data.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <CVUpload 
+                onUploadComplete={handleNewCVUpload} 
+                onJobMatchingTrigger={handleJobMatchingTrigger}
+              />
+            </div>
+          </DialogContent>
+        </Dialog>
       </main>
     </div>
   )
