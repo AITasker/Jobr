@@ -1,0 +1,173 @@
+Here’s a complete, end-to-end ATS-scoring logic you can drop into your web app as the source of truth for how every score is calculated.
+This includes text-parsing, keyword extraction, weighting, edge-case handling, and example formulas.
+
+1️⃣ Overall Flow
+UPLOAD JD + Resume
+ ↓
+Text Extraction & Cleaning
+ ↓
+Keyword Extraction (must-have / nice-to-have)
+ ↓
+Resume Matching (exact + semantic)
+ ↓
+Scoring Calculation (0–100)
+ ↓
+Return JSON
+
+2️⃣ Text Extraction & Cleaning
+
+Goal: Turn both the Job Description (JD) and Resume into clean text.
+
+Resume:
+
+Use a reliable PDF/DOC parser (e.g., pdfminer.six, docx2txt).
+
+Remove headers/footers, convert to lowercase.
+
+Normalize punctuation and whitespace.
+
+Job Description:
+
+Same cleaning steps as resume.
+
+Ensure it’s plain text before sending to the LLM.
+
+3️⃣ Keyword Extraction
+
+Ask the model to output two arrays:
+
+must_have: critical requirements explicitly stated (“required”, “must have”, “mandatory”, etc.).
+
+nice_to_have: preferred but optional (“preferred”, “good to have”, “plus”, etc.).
+
+Guidelines:
+
+Deduplicate (e.g., “Python programming” and “Python” → one entry).
+
+Normalize (lowercase, singular form).
+
+Typical output:
+
+{
+  "must_have": ["program management", "sql", "stakeholder management"],
+  "nice_to_have": ["powerbi", "agile", "predictive analytics"]
+}
+
+4️⃣ Matching Logic
+
+For each keyword in both sets:
+
+Exact match: Does the word/phrase appear in the resume text?
+
+Use simple substring or regex for speed.
+
+Semantic match (optional):
+
+Use embeddings or an LLM to detect synonyms
+
+E.g., “data visualization” ≈ “dashboarding”.
+
+Mark each keyword as matched or missing.
+
+5️⃣ Scoring Formula
+
+Let:
+
+M = total must-have keywords
+
+Nm = number of must-have matches
+
+N = total nice-to-have keywords
+
+Nn = number of nice-to-have matches
+
+Weights:
+
+Must-have weight = 70% of total score
+
+Nice-to-have weight = 30% of total score
+
+Calculations:
+
+must_score  = (Nm / M) * 70      if M > 0 else 0
+nice_score  = (Nn / N) * 30      if N > 0 else 0
+ats_score   = round(must_score + nice_score)
+
+
+Edge cases:
+
+If M = 0 and N = 0 → return ats_score = 0 and empty arrays.
+
+6️⃣ Optional Bonuses
+
+(Implement only if desired.)
+
+Experience Bonus: +5 if the resume shows ≥X years in a required field.
+
+Recency Bonus: +5 if key skills appear in the most recent job.
+
+These are additive but must cap the score at 100.
+
+7️⃣ JSON Output
+
+Always return strict JSON so your backend can json.loads() without cleaning.
+
+Example:
+
+{
+  "ats_score": 92,
+  "matched_must_haves": ["program management", "sql"],
+  "missing_must_haves": ["stakeholder management"],
+  "matched_nice_haves": ["powerbi", "agile", "predictive analytics"],
+  "missing_nice_haves": [],
+  "explanation": "Matched 2/3 must-have skills and all 3 nice-to-have skills."
+}
+
+8️⃣ Implementation Pseudocode (Python)
+def ats_score(jd_text, resume_text):
+    # 1. Call LLM to extract keyword sets
+    extraction_prompt = f"""
+    Extract two lists of skills from this job description:
+    Must-have (explicitly required) and Nice-to-have (preferred/optional).
+    Respond ONLY in JSON with keys must_have and nice_to_have.
+    JD:
+    {jd_text}
+    """
+    kw = llm_call(extraction_prompt)
+    must_have = [k.lower() for k in kw['must_have']]
+    nice_to_have = [k.lower() for k in kw['nice_to_have']]
+
+    # 2. Match keywords
+    resume_lower = resume_text.lower()
+    matched_must = [k for k in must_have if k in resume_lower]
+    matched_nice = [k for k in nice_to_have if k in resume_lower]
+
+    # 3. Score
+    M, N = len(must_have), len(nice_to_have)
+    must_score = (len(matched_must) / M) * 70 if M else 0
+    nice_score = (len(matched_nice) / N) * 30 if N else 0
+    score = round(must_score + nice_score)
+
+    return {
+        "ats_score": score,
+        "matched_must_haves": matched_must,
+        "missing_must_haves": list(set(must_have) - set(matched_must)),
+        "matched_nice_haves": matched_nice,
+        "missing_nice_haves": list(set(nice_to_have) - set(matched_nice)),
+        "explanation": f"Matched {len(matched_must)}/{M} must-have and "
+                       f"{len(matched_nice)}/{N} nice-to-have skills."
+    }
+
+9️⃣ Summary of the Logic
+
+Extract must-have & nice-to-have keywords from the JD.
+
+Match those keywords (and synonyms) in the resume.
+
+Weight must-have = 70%, nice-to-have = 30%.
+
+Score = round( (must_matches/M)*70 + (nice_matches/N)*30 ).
+
+Return JSON with full matched/missing lists and explanation.
+
+This is the complete baseline logic you can build on, audit, or customize for your own ATS-scoring web app.
