@@ -992,6 +992,20 @@ Processed
                         Ready for Matching
                       </Badge>
                     </div>
+                    
+                    {/* Integrated ATS Scoring Section */}
+                    <div className="mt-6 pt-6 border-t border-blue-200 dark:border-blue-800">
+                      <div className="flex items-center gap-3 mb-4">
+                        <div className="bg-blue-100 dark:bg-blue-900 p-2 rounded-lg">
+                          <Target className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                        </div>
+                        <div>
+                          <h3 className="font-semibold text-blue-900 dark:text-blue-100">ATS Score Analysis</h3>
+                          <p className="text-sm text-blue-700 dark:text-blue-300">Check how your CV scores against job descriptions</p>
+                        </div>
+                      </div>
+                      <ATSScorer cvData={cvData} />
+                    </div>
                   </CardContent>
                 </Card>
               </div>

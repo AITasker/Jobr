@@ -18,44 +18,55 @@ interface ATSResult {
   explanation: string;
 }
 
-export function ATSScorer() {
+interface ATSScorerProps {
+  cvData?: {
+    originalContent?: string;
+    fileName?: string;
+  };
+}
+
+export function ATSScorer({ cvData }: ATSScorerProps) {
   const [jobDescription, setJobDescription] = useState("");
-  const [resumeText, setResumeText] = useState("");
   const [result, setResult] = useState<ATSResult | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
 
   const calculateScore = async () => {
-    if (!jobDescription.trim() || !resumeText.trim()) {
+    if (!jobDescription.trim()) {
       toast({
         variant: "destructive",
         title: "Missing Information",
-        description: "Please provide both job description and resume text."
+        description: "Please provide a job description to analyze against your CV."
+      });
+      return;
+    }
+
+    if (!cvData?.originalContent) {
+      toast({
+        variant: "destructive",
+        title: "CV Data Missing",
+        description: "No CV text available for analysis. Please upload a CV first."
       });
       return;
     }
 
     setIsLoading(true);
     try {
-      const response = await apiRequest('/api/ats/score', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          jobDescription: jobDescription.trim(),
-          resumeText: resumeText.trim()
-        })
+      const response = await apiRequest('POST', '/api/ats/score', {
+        jobDescription: jobDescription.trim(),
+        resumeText: cvData.originalContent
       });
+      
+      const data = await response.json();
 
-      if (response.success) {
-        setResult(response.data);
+      if (data.success) {
+        setResult(data.data);
         toast({
           title: "ATS Score Calculated",
-          description: `Your ATS score is ${response.data.ats_score}%`
+          description: `Your ATS score is ${data.data.ats_score}%`
         });
       } else {
-        throw new Error(response.message || 'Failed to calculate score');
+        throw new Error(data.message || 'Failed to calculate score');
       }
     } catch (error) {
       console.error('ATS Score calculation error:', error);
@@ -82,72 +93,42 @@ export function ATSScorer() {
   };
 
   return (
-    <div className="max-w-6xl mx-auto space-y-6">
-      {/* Header */}
-      <Card className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white">
-        <CardHeader>
-          <CardTitle className="text-2xl font-bold">ATS Score Calculator</CardTitle>
-          <p className="text-blue-100">
-            Get instant feedback on how well your resume matches job requirements. 
-            This tool helps you understand what ATS systems look for.
-          </p>
-        </CardHeader>
-      </Card>
+    <div className="space-y-4">
+      {/* CV Status */}
+      <div className="flex items-center gap-2 text-sm">
+        {cvData?.fileName ? (
+          <>
+            <CheckCircle className="h-4 w-4 text-green-600" />
+            <span className="text-muted-foreground">Using CV: {cvData.fileName}</span>
+          </>
+        ) : (
+          <>
+            <AlertCircle className="h-4 w-4 text-yellow-600" />
+            <span className="text-muted-foreground">No CV data available</span>
+          </>
+        )}
+      </div>
 
-      {/* Input Section */}
-      <div className="grid gap-6 md:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <div className="w-6 h-6 bg-blue-100 rounded-full flex items-center justify-center">
-                <span className="text-blue-600 text-sm font-bold">1</span>
-              </div>
-              Job Description
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Label htmlFor="job-description">Paste the complete job description</Label>
-            <Textarea
-              id="job-description"
-              data-testid="textarea-job-description"
-              placeholder="Paste the job description here..."
-              value={jobDescription}
-              onChange={(e) => setJobDescription(e.target.value)}
-              className="min-h-[200px] mt-2"
-            />
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <div className="w-6 h-6 bg-blue-100 rounded-full flex items-center justify-center">
-                <span className="text-blue-600 text-sm font-bold">2</span>
-              </div>
-              Your Resume
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Label htmlFor="resume-text">Paste your resume text</Label>
-            <Textarea
-              id="resume-text"
-              data-testid="textarea-resume-text"
-              placeholder="Paste your resume content here..."
-              value={resumeText}
-              onChange={(e) => setResumeText(e.target.value)}
-              className="min-h-[200px] mt-2"
-            />
-          </CardContent>
-        </Card>
+      {/* Job Description Input */}
+      <div className="space-y-2">
+        <Label htmlFor="job-description">Job Description</Label>
+        <Textarea
+          id="job-description"
+          data-testid="textarea-job-description"
+          placeholder="Paste the job description you want to analyze your CV against..."
+          value={jobDescription}
+          onChange={(e) => setJobDescription(e.target.value)}
+          className="min-h-[120px] resize-none"
+        />
       </div>
 
       {/* Calculate Button */}
       <div className="flex justify-center">
         <Button 
           onClick={calculateScore}
-          disabled={isLoading || !jobDescription.trim() || !resumeText.trim()}
-          size="lg"
-          className="px-8"
+          disabled={isLoading || !jobDescription.trim() || !cvData?.originalContent}
+          size="sm"
+          className="px-6"
           data-testid="button-calculate-ats"
         >
           {isLoading ? (
