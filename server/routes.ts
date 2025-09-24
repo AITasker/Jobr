@@ -948,18 +948,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         processingMethod = 'basic_enhancement';
       }
 
-      // Try to update CV with enhanced data (ignore failures for now)
-      try {
-        await storage.updateCv(cvId, {
-          jobDescription: jobDescription.trim(),
-          enhancedCv: JSON.stringify(enhancedData),
-          jdAnalysis: enhancedData.jdAnalysis,
-          enhancedSkills: enhancedData.enhancedSkills
-        });
-      } catch (dbError) {
-        console.log('Database update failed (continuing with response):', dbError);
-        // Continue without database update for now
-      }
+      // Update CV with enhanced data
+      const updatedCv = await storage.updateCv(cvId, {
+        jobDescription: jobDescription.trim(),
+        enhancedCv: JSON.stringify(enhancedData),
+        jdAnalysis: enhancedData.jdAnalysis,
+        enhancedSkills: enhancedData.enhancedSkills
+      });
 
       res.json({
         success: true,
@@ -1175,6 +1170,99 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ 
         message: "Failed to fetch matched jobs",
         details: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
+
+  // Enhanced job matching with CV ID and JD context
+  app.get('/api/jobs/match/:cvId', isAuthenticated, async (req: any, res) => {
+    try {
+      const { cvId } = req.params;
+      const { enhanced } = req.query;
+      const userId = req.user.claims.sub;
+      
+      // Get the specific CV
+      const cv = await storage.getCv(cvId);
+      
+      if (!cv || cv.userId !== userId) {
+        return res.status(404).json({ 
+          message: "CV not found",
+          code: "CV_NOT_FOUND"
+        });
+      }
+
+      if (!cv.parsedData) {
+        return res.status(400).json({ 
+          message: "CV not processed yet",
+          code: "CV_NOT_PROCESSED"
+        });
+      }
+
+      const limit = req.query.limit ? parseInt(req.query.limit as string) : 20;
+      const allJobs = await storage.getJobs(100);
+      
+      // Check if enhanced matching is requested and JD data exists
+      if (enhanced === 'true' && cv.jobDescription && cv.enhancedCv) {
+        console.log('Performing enhanced job matching with JD context for CV:', cvId);
+        
+        try {
+          // Create enhanced CV data for matching
+          const enhancedCvData = {
+            ...cv,
+            originalContent: cv.enhancedCv, // Use enhanced CV content
+            parsedData: {
+              ...cv.parsedData,
+              skills: cv.enhancedSkills || cv.skills || [],
+              enhancedWithJD: true,
+              jobDescription: cv.jobDescription,
+              jdAnalysis: cv.jdAnalysis
+            }
+          };
+          
+          // Get enhanced matches
+          const enhancedMatches = await JobMatchingService.getTopMatches(enhancedCvData, allJobs, limit);
+          
+          // Add enhancement indicators
+          const enhancedResults = enhancedMatches.map(match => ({
+            ...match,
+            matchScore: Math.min(100, match.matchScore + 3), // Small boost for JD-enhanced matching
+            isEnhanced: true,
+            enhancementReason: 'Enhanced with job description context'
+          }));
+          
+          res.json({
+            matches: enhancedResults,
+            total: enhancedResults.length,
+            processingMethod: 'enhanced',
+            enhanced: true
+          });
+        } catch (enhancedError) {
+          console.warn('Enhanced matching failed, falling back to original:', enhancedError);
+          // Fallback to original matching
+          const matches = await JobMatchingService.getTopMatches(cv, allJobs, limit);
+          res.json({
+            matches,
+            total: matches.length,
+            processingMethod: 'basic_fallback',
+            enhanced: false
+          });
+        }
+      } else {
+        // Standard job matching
+        const matches = await JobMatchingService.getTopMatches(cv, allJobs, limit);
+        
+        res.json({
+          matches,
+          total: matches.length,
+          processingMethod: JobMatchingService.isAvailable() ? 'ai' : 'basic',
+          enhanced: false
+        });
+      }
+    } catch (error) {
+      console.error('Error in enhanced job matching:', error);
+      res.status(500).json({ 
+        message: "Failed to match jobs",
+        code: "MATCHING_ERROR"
       });
     }
   });

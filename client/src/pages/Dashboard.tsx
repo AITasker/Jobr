@@ -5,6 +5,8 @@ import { useAuth } from '@/hooks/useAuth'
 import { CVUpload } from '@/components/CVUpload'
 import { JDUpload } from '@/components/JDUpload'
 import { JobCard } from '@/components/JobCard'
+import { EnhancedCVDisplay } from '@/components/EnhancedCVDisplay'
+import { JobMatchSection } from '@/components/JobMatchSection'
 import { ApplicationTracker } from '@/components/ApplicationTracker'
 import { AddApplicationModal } from '@/components/AddApplicationModal'
 import { EditApplicationModal } from '@/components/EditApplicationModal'
@@ -23,7 +25,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { apiRequest, queryClient } from '@/lib/queryClient'
 import { useToast } from '@/hooks/use-toast'
-import { Search, Filter, Briefcase, Target, FileText, Loader2, AlertCircle, Plus, RefreshCw, TrendingUp, MapPin, DollarSign, Clock, ChevronDown, Bookmark, History, Brain, X } from 'lucide-react'
+import { Search, Filter, Briefcase, Target, FileText, Loader2, AlertCircle, Plus, RefreshCw, TrendingUp, MapPin, DollarSign, Clock, ChevronDown, Bookmark, History, Brain, X, Sparkles } from 'lucide-react'
 import type { Application as DatabaseApplication, Job as DatabaseJob, Cv as DatabaseCv } from '@shared/schema'
 
 // Response interfaces aligned with backend API responses
@@ -143,6 +145,12 @@ export default function Dashboard() {
   // Job comparison state
   const [compareJobs, setCompareJobs] = useState<JobMatchResponse[]>([])
   const [showComparison, setShowComparison] = useState(false)
+  
+  // JD Integration state
+  const [jdIntegrated, setJdIntegrated] = useState(false)
+  const [enhancedCvData, setEnhancedCvData] = useState<any>(null)
+  const [enhancedJobMatches, setEnhancedJobMatches] = useState<JobMatchResponse[]>([])
+  const [isLoadingEnhancedMatches, setIsLoadingEnhancedMatches] = useState(false)
 
   // All queries must be called before any conditional logic
   const { data: cvData, isLoading: cvLoading, error: cvError } = useQuery<CVResponse | null>({
@@ -268,6 +276,62 @@ export default function Dashboard() {
       title: "Finding Your Perfect Matches!",
       description: "Our AI is analyzing your CV against thousands of job opportunities.",
     })
+  }
+
+  // JD Integration handlers
+  const handleJDIntegrated = async (enhancedData: any) => {
+    setJdIntegrated(true)
+    setEnhancedCvData(enhancedData)
+    setIsLoadingEnhancedMatches(true)
+    
+    try {
+      // Refresh CV data to get the updated enhanced fields from backend
+      await queryClient.invalidateQueries({ queryKey: ['/api/cv/latest'] })
+      
+      // Get enhanced job matches from backend using the enhanced CV
+      const response = await fetch(`/api/jobs/match/${cvData?.id}?enhanced=true`)
+      if (response.ok) {
+        const data = await response.json()
+        setEnhancedJobMatches(data.matches || [])
+        
+        toast({
+          title: "CV Enhanced Successfully!",
+          description: `Found ${data.matches?.length || 0} enhanced job matches based on the job description.`,
+        })
+      } else {
+        // Fallback to original matches if enhanced matching fails
+        console.warn('Enhanced job matching failed, using original matches')
+        setEnhancedJobMatches(matchedJobsData?.matches || [])
+        
+        toast({
+          title: "CV Enhanced!",
+          description: "Enhanced CV created. Using original job matches as enhanced matching is temporarily unavailable.",
+          variant: "default"
+        })
+      }
+    } catch (error) {
+      console.error('Error getting enhanced job matches:', error)
+      // Fallback to original matches on error
+      setEnhancedJobMatches(matchedJobsData?.matches || [])
+      
+      toast({
+        title: "CV Enhanced!",
+        description: "Enhanced CV created. Using original job matches due to a temporary issue.",
+        variant: "default"
+      })
+    } finally {
+      setIsLoadingEnhancedMatches(false)
+    }
+  }
+
+  const handleRefreshOriginalMatches = () => {
+    queryClient.invalidateQueries({ queryKey: ['/api/jobs/matched'] })
+  }
+
+  const handleRefreshEnhancedMatches = () => {
+    if (jdIntegrated && enhancedCvData) {
+      handleJDIntegrated(enhancedCvData)
+    }
   }
 
   const handleSearchSuggestionSelect = (suggestion: SearchSuggestion) => {
@@ -467,50 +531,111 @@ export default function Dashboard() {
             </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="jobs" className="space-y-6">
-            {/* Job Insights Section */}
-            {jobInsights?.insights && (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Brain className="h-5 w-5" />
-                    Career Insights
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="grid gap-4 md:grid-cols-3">
-                    <div className="space-y-2">
-                      <h4 className="text-sm font-medium text-foreground">Next Career Steps</h4>
-                      <div className="flex flex-wrap gap-1">
-                        {jobInsights.insights.careerProgression.nextRoles.slice(0, 3).map((role, index) => (
-                          <Badge key={index} variant="secondary" className="text-xs">
-                            {role}
-                          </Badge>
-                        ))}
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      <h4 className="text-sm font-medium text-foreground">Skills to Develop</h4>
-                      <div className="flex flex-wrap gap-1">
-                        {jobInsights.insights.careerProgression.skillGaps.slice(0, 3).map((skill, index) => (
-                          <Badge key={index} variant="outline" className="text-xs">
-                            {skill}
-                          </Badge>
-                        ))}
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      <h4 className="text-sm font-medium text-foreground">Growth Potential</h4>
-                      <div className="flex items-center gap-2">
-                        <TrendingUp className="h-4 w-4 text-green-600" />
-                        <span className="text-sm font-medium">
-                          +{jobInsights.insights.careerProgression.salaryGrowthPotential}% salary growth
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
+          <TabsContent value="jobs" className="space-y-8">
+            {/* 4-Box Sequential Flow as requested */}
+            
+            {/* BOX 1: Uploaded CV */}
+            {hasCvData && (
+              <div data-testid="box-uploaded-cv">
+                <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
+                  <span className="bg-primary text-primary-foreground rounded-full w-8 h-8 flex items-center justify-center text-sm font-bold">1</span>
+                  Your Uploaded CV
+                </h2>
+                <EnhancedCVDisplay 
+                  cvData={cvData} 
+                  showEnhanced={false} 
+                />
+              </div>
+            )}
+
+            {/* BOX 2: Original Job Matches */}
+            {hasCvData && (
+              <div data-testid="box-original-matches">
+                <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
+                  <span className="bg-primary text-primary-foreground rounded-full w-8 h-8 flex items-center justify-center text-sm font-bold">2</span>
+                  Job Matches Based on Your CV
+                </h2>
+                <JobMatchSection
+                  title="Original Job Matches"
+                  icon={<Target className="h-5 w-5" />}
+                  matches={matchedJobsData?.matches || []}
+                  isLoading={matchedJobsLoading}
+                  error={matchedJobsError}
+                  onRefresh={handleRefreshOriginalMatches}
+                  onSearchJobs={() => setActiveTab('search')}
+                  isEnhanced={false}
+                />
+              </div>
+            )}
+
+            {/* BOX 3: Job Description Integration */}
+            {hasCvData && !jdIntegrated && (
+              <div data-testid="box-jd-integration">
+                <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
+                  <span className="bg-muted text-muted-foreground rounded-full w-8 h-8 flex items-center justify-center text-sm font-bold">3</span>
+                  Enhance Your Matches (Optional)
+                </h2>
+                <JDUpload 
+                  cvId={cvData?.id || ''}
+                  onJDIntegrated={handleJDIntegrated}
+                  onJobMatchingTrigger={handleJobMatchingTrigger}
+                />
+              </div>
+            )}
+
+            {/* BOX 3: Enhanced CV (after JD integration) */}
+            {jdIntegrated && enhancedCvData && (
+              <div data-testid="box-enhanced-cv">
+                <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
+                  <span className="bg-primary text-primary-foreground rounded-full w-8 h-8 flex items-center justify-center text-sm font-bold">3</span>
+                  Enhanced CV with Job Description
+                </h2>
+                <EnhancedCVDisplay 
+                  cvData={cvData} 
+                  enhancedData={enhancedCvData}
+                  showEnhanced={true} 
+                />
+              </div>
+            )}
+
+            {/* BOX 4: Enhanced Job Matches (after JD integration) */}
+            {jdIntegrated && (
+              <div data-testid="box-enhanced-matches">
+                <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
+                  <span className="bg-primary text-primary-foreground rounded-full w-8 h-8 flex items-center justify-center text-sm font-bold">4</span>
+                  Enhanced Job Matches
+                </h2>
+                <JobMatchSection
+                  title="Enhanced Job Matches"
+                  icon={<Sparkles className="h-5 w-5 text-primary" />}
+                  matches={enhancedJobMatches}
+                  isLoading={isLoadingEnhancedMatches}
+                  error={null}
+                  onRefresh={handleRefreshEnhancedMatches}
+                  onSearchJobs={() => setActiveTab('search')}
+                  isEnhanced={true}
+                  enhancementData={enhancedCvData}
+                />
+              </div>
+            )}
+
+            {/* Show CV upload if no CV */}
+            {!hasCvData && (
+              <div className="text-center py-12">
+                <FileText className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+                <h3 className="text-lg font-medium text-foreground mb-2">Upload Your CV to Get Started</h3>
+                <p className="text-muted-foreground mb-4">
+                  Upload your CV to see personalized job matches and enhance them with specific job descriptions.
+                </p>
+                <Button 
+                  variant="default" 
+                  onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+                  data-testid="button-upload-cv-start"
+                >
+                  <FileText className="h-4 w-4 mr-2" />
+                  Upload Your CV
+                </Button>
+              </div>
             )}
 
             {/* AI Job Matches */}
