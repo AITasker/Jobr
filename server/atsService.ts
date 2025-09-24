@@ -23,83 +23,119 @@ export class ATSService {
       .trim();
   }
 
-  // Enhanced fallback that aims for higher baseline scores by being more lenient with matches
+  // Dynamic keyword extraction that analyzes any job description contextually  
   private static extractKeywordsFallback(jobDescription: string): { must_have: string[]; nice_to_have: string[] } {
     const text = jobDescription.toLowerCase();
-    console.log("=== ATS FALLBACK DEBUG ===");
-    console.log("Job Description:", text.substring(0, 200) + "...");
+    console.log("=== DYNAMIC ATS FALLBACK DEBUG ===");
+    console.log("Job Description sample:", text.substring(0, 200) + "...");
 
-    // The original AI likely extracted specific skills that were actually in the job description
-    // We need to be more comprehensive and match what AI would find
-    const skillPatterns = [
-      // Core technical skills - highest priority for must-have
-      /\b(python|java|javascript|react|angular|vue|typescript|sql|html|css|php|ruby|go|rust|scala|kotlin|programming|development|software|coding)\b/g,
-      // Experience requirements - these are often must-have
-      /\b(\d+\+?\s*years?\s*(of\s*)?(experience|background)|experience\s+in|experience\s+with|background\s+in)\b/g,
-      // Technologies and platforms
-      /\b(aws|azure|gcp|google\s*cloud|docker|kubernetes|git|linux|mysql|postgresql|mongodb|node\.?js|express|django|flask|spring|laravel|rails)\b/g,
-      // Management and business skills - often critical
-      /\b(project\s*management|program\s*management|operations|product\s*management|stakeholder\s*management|problem\s*solving|execution)\b/g,
-      // Education and qualifications
-      /\b(bachelor|master|mba|degree|graduation|qualified|certification)\b/g,
-      // Process and methodology
-      /\b(agile|scrum|devops|lean|kanban|processes|operational|design|scaling|curriculum|content|educational|edtech)\b/g,
-      // Data and analytics
-      /\b(excel|analytical|data|analytics|tools|proficiency)\b/g
+    const must_have: string[] = [];
+    const nice_to_have: string[] = [];
+
+    // Split into sections to analyze context
+    const sentences = text.split(/[.!?]+/).map(s => s.trim()).filter(s => s.length > 10);
+    
+    // Context markers that indicate importance
+    const mustHaveMarkers = ['required', 'must have', 'essential', 'mandatory', 'minimum', 'need', 'necessary'];
+    const preferredMarkers = ['preferred', 'nice to have', 'bonus', 'plus', 'advantage', 'desired', 'ideal'];
+    
+    // Dynamic skill patterns - more comprehensive and flexible
+    const skillExtractionPatterns = [
+      // Technical skills and tools (exact matches likely in resumes)
+      /\b(python|java|javascript|react|angular|vue|node\.?js|typescript|sql|html|css|php|ruby|go|rust|scala|kotlin|aws|azure|gcp|docker|kubernetes|git|linux|mysql|postgresql|mongodb|redis|elasticsearch|spark|hadoop|tensorflow|pytorch|scikit-learn|pandas|numpy|matplotlib|tableau|powerbi|excel|jira|confluence|slack|figma|sketch|photoshop|illustrator|autocad|solidworks|matlab|r|sas|spss)\b/g,
+      
+      // Management and business skills (common resume phrases)
+      /\b(project\s+management|program\s+management|product\s+management|stakeholder\s+management|team\s+leadership|cross-functional\s+coordination|agile|scrum|kanban|devops|operations|business\s+analysis|data\s+analysis|problem\s+solving|strategic\s+planning|budget\s+management|vendor\s+management|client\s+management|relationship\s+management)\b/g,
+      
+      // Education and certifications
+      /\b(bachelor|master|mba|phd|degree|certification|certified|licensed)\b/g,
+      
+      // Experience levels (only capture specific numbers, not generic phrases)
+      /\b(\d+\+?\s*years?\s+(?:of\s+)?experience)\b/g,
+      
+      // Industry specific terms (extracted dynamically)
+      /\b(healthcare|finance|fintech|edtech|e-commerce|retail|manufacturing|automotive|aerospace|telecommunications|media|gaming|blockchain|cryptocurrency|machine\s+learning|artificial\s+intelligence|data\s+science|cybersecurity|cloud\s+computing|mobile\s+development|web\s+development|frontend|backend|fullstack|full-stack|devops|qa|testing|automation|ci\/cd)\b/g
     ];
 
-    const allSkills = new Set<string>();
-    skillPatterns.forEach(pattern => {
+    // Extract skills from all patterns and filter out generic scaffolding
+    const allExtractedSkills = new Set<string>();
+    const genericScaffolding = [
+      'experience in', 'experience with', 'background in', 'expertise in', 
+      'knowledge of', 'proficiency in', 'familiarity with', 'understanding of',
+      'years of experience', 'years experience', 'experience', 'background',
+      'knowledge', 'proficiency', 'familiarity', 'understanding'
+    ];
+    
+    skillExtractionPatterns.forEach(pattern => {
       const matches = text.match(pattern);
       if (matches) {
         matches.forEach(match => {
           const cleaned = this.cleanText(match);
-          if (cleaned.length > 2) { // Filter out very short matches
-            allSkills.add(cleaned);
+          // Filter out generic scaffolding phrases that will match any resume
+          if (cleaned.length > 2 && !genericScaffolding.includes(cleaned)) {
+            allExtractedSkills.add(cleaned);
           }
         });
       }
     });
 
-    console.log("Extracted skills:", Array.from(allSkills));
+    console.log("All extracted skills:", Array.from(allExtractedSkills));
 
-    // More generous distribution - aim for higher baseline scores
-    const skillsArray = Array.from(allSkills);
-    const must_have: string[] = [];
-    const nice_to_have: string[] = [];
-
-    // Since the user got 93% with AI, we should be generous with must-haves
-    // The AI likely found actual requirements in the job description
-    skillsArray.forEach(skill => {
-      // Experience, core skills, and degree requirements are typically must-have
-      if (/\b(years|experience|programming|development|software|degree|bachelor|master|project management|operations|stakeholder|problem solving)\b/.test(skill)) {
-        must_have.push(skill);
-      } else {
-        nice_to_have.push(skill);
-      }
+    // Analyze each sentence for context and categorize skills
+    sentences.forEach(sentence => {
+      const hasMustHave = mustHaveMarkers.some(marker => sentence.includes(marker));
+      const hasPreferred = preferredMarkers.some(marker => sentence.includes(marker));
+      
+      // Extract skills from this sentence
+      skillExtractionPatterns.forEach(pattern => {
+        const matches = sentence.match(pattern);
+        if (matches) {
+          matches.forEach(match => {
+            const cleaned = this.cleanText(match);
+            if (cleaned.length > 2) {
+              if (hasMustHave || (!hasPreferred && sentence.includes('require'))) {
+                if (!must_have.includes(cleaned)) {
+                  must_have.push(cleaned);
+                }
+              } else if (hasPreferred) {
+                if (!nice_to_have.includes(cleaned)) {
+                  nice_to_have.push(cleaned);
+                }
+              }
+            }
+          });
+        }
+      });
     });
 
-    // Ensure reasonable baseline - if we don't have enough skills, add some common ones
-    // that might be in both the JD and CV
-    if (allSkills.size < 3) {
-      // Add some generic skills that are often present
-      must_have.push("experience", "degree");
-      nice_to_have.push("analytical", "excel");
+    // If no explicit categorization found, use intelligent defaults based on skill types
+    if (must_have.length === 0 && nice_to_have.length === 0) {
+      Array.from(allExtractedSkills).forEach(skill => {
+        // Core technical skills, education, and experience requirements typically must-have
+        if (skill.includes('experience') || skill.includes('degree') || skill.includes('bachelor') || skill.includes('master') ||
+            /\b(python|java|javascript|react|sql|aws|project management|stakeholder management)\b/.test(skill)) {
+          must_have.push(skill);
+        } else {
+          nice_to_have.push(skill);
+        }
+      });
     }
 
-    // Ensure good distribution for higher scores - AI likely found 4-6 must-haves
-    if (must_have.length < 3 && nice_to_have.length > 1) {
-      const moveToMustHave = nice_to_have.splice(0, Math.min(2, nice_to_have.length));
-      must_have.push(...moveToMustHave);
+    // Distribute remaining skills if categorization is too unbalanced
+    const totalSkills = must_have.length + nice_to_have.length;
+    if (totalSkills > 4 && must_have.length < 2) {
+      // Move some nice-to-haves to must-haves for balance
+      const toMove = nice_to_have.splice(0, Math.min(3, nice_to_have.length));
+      must_have.push(...toMove);
     }
 
-    const result = {
-      must_have: must_have.filter(skill => skill.length > 1),
-      nice_to_have: nice_to_have.filter(skill => skill.length > 1)
+    const result = { 
+      must_have: must_have.slice(0, 8), // Limit to reasonable number
+      nice_to_have: nice_to_have.slice(0, 8) 
     };
-
-    console.log("Final categorization:", result);
-    console.log("=== END ATS FALLBACK DEBUG ===");
+    
+    console.log("Dynamic extraction result:", result);
+    console.log("=== END DYNAMIC ATS FALLBACK DEBUG ===");
 
     return result;
   }
