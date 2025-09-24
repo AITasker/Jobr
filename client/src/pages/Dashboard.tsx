@@ -7,6 +7,8 @@ import { JDUpload } from '@/components/JDUpload'
 import { JobCard } from '@/components/JobCard'
 import { EnhancedCVDisplay } from '@/components/EnhancedCVDisplay'
 import { JobMatchSection } from '@/components/JobMatchSection'
+import { ATSScorer } from '@/components/ATSScorer'
+import { ATSScoreCalculator } from '@/components/ATSScoreCalculator'
 import { ApplicationTracker } from '@/components/ApplicationTracker'
 import { AddApplicationModal } from '@/components/AddApplicationModal'
 import { EditApplicationModal } from '@/components/EditApplicationModal'
@@ -22,10 +24,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Separator } from '@/components/ui/separator'
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { apiRequest, queryClient } from '@/lib/queryClient'
 import { useToast } from '@/hooks/use-toast'
-import { Search, Filter, Briefcase, Target, FileText, Loader2, AlertCircle, Plus, RefreshCw, TrendingUp, MapPin, DollarSign, Clock, ChevronDown, Bookmark, History, Brain, X, Sparkles } from 'lucide-react'
+import { Search, Filter, Briefcase, Target, FileText, Loader2, AlertCircle, Plus, RefreshCw, TrendingUp, MapPin, DollarSign, Clock, ChevronDown, Bookmark, History, Brain, X, Sparkles, Mail } from 'lucide-react'
 import type { Application as DatabaseApplication, Job as DatabaseJob, Cv as DatabaseCv } from '@shared/schema'
 
 // Response interfaces aligned with backend API responses
@@ -151,6 +154,18 @@ export default function Dashboard() {
   const [enhancedCvData, setEnhancedCvData] = useState<any>(null)
   const [enhancedJobMatches, setEnhancedJobMatches] = useState<JobMatchResponse[]>([])
   const [isLoadingEnhancedMatches, setIsLoadingEnhancedMatches] = useState(false)
+  const [showNewCVUpload, setShowNewCVUpload] = useState(false)
+  const [showCompleteCVModal, setShowCompleteCVModal] = useState(false)
+
+  // ATS Score state for summary display
+  const [atsScore, setAtsScore] = useState<number | null>(null)
+  const [atsScoreLabel, setAtsScoreLabel] = useState('--% Baseline')
+
+  // Callback to update ATS score from ATSScorer component
+  const updateAtsScore = useCallback((score: number | null, label: string) => {
+    setAtsScore(score)
+    setAtsScoreLabel(label)
+  }, [])
 
   // All queries must be called before any conditional logic
   const { data: cvData, isLoading: cvLoading, error: cvError } = useQuery<CVResponse | null>({
@@ -165,18 +180,336 @@ export default function Dashboard() {
   // Enhanced CV validation with proper type checking
   const hasCvData = cvOk(cvData || null)
 
-  // Get matched jobs with proper CV validation
+  // Temporary mock data for demonstration as requested by user
+  const mockJobsData: MatchedJobsResponse = {
+    matches: [
+      {
+        job: {
+          id: "1",
+          title: "Senior Frontend Developer",
+          company: "TechCorp India",
+          description: "Looking for an experienced React developer to join our dynamic team. Must have 3+ years experience with modern JavaScript frameworks.",
+          location: "Bangalore, Karnataka",
+          salary: "₹12-18 LPA",
+          type: "Full-time",
+          remote: false,
+          skills: ["React", "JavaScript", "TypeScript", "Node.js"] as any,
+          experienceLevel: "Senior",
+          postedDate: new Date("2024-09-20T10:00:00Z") as any,
+          requirements: "React, TypeScript, 3+ years experience",
+          benefits: "Health insurance, Remote work options"
+        },
+        matchScore: 92,
+        explanation: "Excellent match based on your React and JavaScript skills",
+        skillsMatch: { matched: ["React", "JavaScript", "TypeScript"], missing: ["Node.js"], score: 85 },
+        experienceMatch: { suitable: true, explanation: "Your experience level matches perfectly", score: 95 },
+        locationMatch: { suitable: true, explanation: "Located in your preferred city", score: 100 },
+        salaryMatch: { suitable: true, explanation: "Salary range matches your expectations", score: 90 }
+      },
+      {
+        job: {
+          id: "2", 
+          title: "Full Stack Developer",
+          company: "StartupHub",
+          description: "Join our innovative startup building next-gen fintech solutions. Looking for someone passionate about full-stack development.",
+          location: "Mumbai, Maharashtra", 
+          salary: "₹10-15 LPA",
+          type: "Full-time",
+          remote: true,
+          skills: ["React", "Node.js", "MongoDB", "Express"] as any,
+          experienceLevel: "Mid-level",
+          postedDate: new Date("2024-09-19T14:30:00Z") as any,
+          requirements: "MERN stack, 2+ years experience",
+          benefits: "Equity options, Flexible hours"
+        },
+        matchScore: 88,
+        explanation: "Great fit for your full-stack capabilities",
+        skillsMatch: { matched: ["React", "Node.js"], missing: ["MongoDB"], score: 75 },
+        experienceMatch: { suitable: true, explanation: "Perfect experience match", score: 90 },
+        locationMatch: { suitable: true, explanation: "Remote work available", score: 100 },
+        salaryMatch: { suitable: true, explanation: "Competitive salary package", score: 85 }
+      },
+      {
+        job: {
+          id: "3",
+          title: "React Developer", 
+          company: "Digital Solutions",
+          description: "We're seeking a skilled React developer to build modern web applications. Great opportunity for career growth.",
+          location: "Pune, Maharashtra",
+          salary: "₹8-12 LPA", 
+          type: "Full-time",
+          remote: false,
+          skills: ["React", "JavaScript", "CSS", "HTML"] as any,
+          experienceLevel: "Mid-level",
+          postedDate: new Date("2024-09-18T09:15:00Z") as any,
+          requirements: "React, JavaScript, CSS skills required",
+          benefits: "Learning opportunities, Team outings"
+        },
+        matchScore: 85,
+        explanation: "Good match for your React expertise",
+        skillsMatch: { matched: ["React", "JavaScript", "CSS"], missing: [], score: 95 },
+        experienceMatch: { suitable: true, explanation: "Experience level is appropriate", score: 85 },
+        locationMatch: { suitable: true, explanation: "Within commutable distance", score: 80 },
+        salaryMatch: { suitable: true, explanation: "Fair compensation", score: 75 }
+      },
+      {
+        job: {
+          id: "4",
+          title: "JavaScript Developer",
+          company: "WebTech Solutions", 
+          description: "Looking for a passionate JavaScript developer to work on cutting-edge web projects with modern technologies.",
+          location: "Hyderabad, Telangana",
+          salary: "₹9-14 LPA",
+          type: "Full-time", 
+          remote: true,
+          skills: ["JavaScript", "Vue.js", "TypeScript", "AWS"] as any,
+          experienceLevel: "Mid-level",
+          postedDate: new Date("2024-09-17T16:45:00Z") as any,
+          requirements: "Strong JavaScript fundamentals, Modern frameworks",
+          benefits: "Remote work, Professional development"
+        },
+        matchScore: 82,
+        explanation: "Strong JavaScript skills alignment",
+        skillsMatch: { matched: ["JavaScript", "TypeScript"], missing: ["Vue.js", "AWS"], score: 70 },
+        experienceMatch: { suitable: true, explanation: "Good experience fit", score: 85 },
+        locationMatch: { suitable: true, explanation: "Remote work available", score: 100 },
+        salaryMatch: { suitable: true, explanation: "Reasonable salary range", score: 80 }
+      },
+      {
+        job: {
+          id: "5",
+          title: "Frontend Engineer",
+          company: "InnovateLabs",
+          description: "Join our team to create amazing user experiences. We value creativity, innovation, and technical excellence.",
+          location: "Chennai, Tamil Nadu",
+          salary: "₹11-16 LPA",
+          type: "Full-time",
+          remote: false, 
+          skills: ["React", "Angular", "JavaScript", "SASS"] as any,
+          experienceLevel: "Senior",
+          postedDate: new Date("2024-09-16T11:20:00Z") as any,
+          requirements: "Frontend frameworks, UI/UX sense",
+          benefits: "Health benefits, Stock options"
+        },
+        matchScore: 79,
+        explanation: "Good frontend development match", 
+        skillsMatch: { matched: ["React", "JavaScript"], missing: ["Angular", "SASS"], score: 65 },
+        experienceMatch: { suitable: true, explanation: "Experience aligns well", score: 80 },
+        locationMatch: { suitable: false, explanation: "May require relocation", score: 60 },
+        salaryMatch: { suitable: true, explanation: "Good salary package", score: 90 }
+      },
+      {
+        job: {
+          id: "6",
+          title: "Software Developer",
+          company: "TechGiant Corp",
+          description: "Be part of our large-scale enterprise applications team. Work with cutting-edge technologies and expert mentors.",
+          location: "Gurgaon, Haryana", 
+          salary: "₹15-22 LPA",
+          type: "Full-time",
+          remote: false,
+          skills: ["Java", "Spring", "React", "SQL"] as any,
+          experienceLevel: "Senior",
+          postedDate: new Date("2024-09-15T13:10:00Z") as any,
+          requirements: "Enterprise development experience, Strong problem-solving",
+          benefits: "Excellent benefits, Career growth"
+        },
+        matchScore: 76,
+        explanation: "Enterprise development opportunity",
+        skillsMatch: { matched: ["React"], missing: ["Java", "Spring", "SQL"], score: 50 },
+        experienceMatch: { suitable: true, explanation: "Senior level position", score: 90 },
+        locationMatch: { suitable: true, explanation: "NCR region", score: 75 },
+        salaryMatch: { suitable: true, explanation: "Excellent compensation", score: 95 }
+      },
+      {
+        job: {
+          id: "7",
+          title: "Web Developer",
+          company: "Creative Agency",
+          description: "Looking for a creative web developer to work on diverse client projects. Perfect for someone who loves variety.",
+          location: "Kochi, Kerala",
+          salary: "₹6-10 LPA",
+          type: "Full-time",
+          remote: true,
+          skills: ["HTML", "CSS", "JavaScript", "WordPress"] as any,
+          experienceLevel: "Entry-level",
+          postedDate: new Date("2024-09-14T08:30:00Z") as any, 
+          requirements: "Web development basics, Creative mindset",
+          benefits: "Creative environment, Flexible work"
+        },
+        matchScore: 73,
+        explanation: "Creative web development role",
+        skillsMatch: { matched: ["HTML", "CSS", "JavaScript"], missing: ["WordPress"], score: 80 },
+        experienceMatch: { suitable: true, explanation: "Good for career development", score: 70 },
+        locationMatch: { suitable: true, explanation: "Remote work option", score: 100 },
+        salaryMatch: { suitable: false, explanation: "Below expected range", score: 60 }
+      },
+      {
+        job: {
+          id: "8",
+          title: "Mobile App Developer",
+          company: "AppInnovate",
+          description: "Join our mobile-first company to build next-generation mobile applications for millions of users.",
+          location: "Bangalore, Karnataka",
+          salary: "₹13-19 LPA", 
+          type: "Full-time",
+          remote: false,
+          skills: ["React Native", "JavaScript", "Mobile Development", "API Integration"] as any,
+          experienceLevel: "Mid-level",
+          postedDate: new Date("2024-09-13T15:45:00Z") as any,
+          requirements: "Mobile app development, React Native experience",
+          benefits: "Top-tier benefits, Innovation time"
+        },
+        matchScore: 70,
+        explanation: "Mobile development transition opportunity",
+        skillsMatch: { matched: ["JavaScript"], missing: ["React Native", "Mobile Development"], score: 40 },
+        experienceMatch: { suitable: true, explanation: "Mid-level position fit", score: 85 },
+        locationMatch: { suitable: true, explanation: "Bangalore location", score: 100 },
+        salaryMatch: { suitable: true, explanation: "Attractive salary", score: 90 }
+      },
+      {
+        job: {
+          id: "9",
+          title: "UI/UX Developer",
+          company: "DesignStudio",
+          description: "Combine your development skills with design thinking. Create beautiful and functional user interfaces.",
+          location: "Mumbai, Maharashtra",
+          salary: "₹9-13 LPA",
+          type: "Full-time", 
+          remote: true,
+          skills: ["HTML", "CSS", "JavaScript", "Figma", "UI/UX"] as any,
+          experienceLevel: "Mid-level",
+          postedDate: new Date("2024-09-12T12:00:00Z") as any,
+          requirements: "Frontend development + Design skills",
+          benefits: "Design tools, Creative freedom"
+        },
+        matchScore: 68,
+        explanation: "Frontend + Design hybrid role",
+        skillsMatch: { matched: ["HTML", "CSS", "JavaScript"], missing: ["Figma", "UI/UX"], score: 60 },
+        experienceMatch: { suitable: true, explanation: "Good experience match", score: 80 },
+        locationMatch: { suitable: true, explanation: "Remote work available", score: 100 },
+        salaryMatch: { suitable: true, explanation: "Fair compensation", score: 75 }
+      },
+      {
+        job: {
+          id: "10",
+          title: "Backend Developer",
+          company: "DataFlow Systems",
+          description: "Build robust backend systems and APIs. Work with big data and scalable architectures in a growing company.",
+          location: "Pune, Maharashtra",
+          salary: "₹10-16 LPA",
+          type: "Full-time",
+          remote: false,
+          skills: ["Node.js", "Python", "MongoDB", "AWS", "APIs"] as any,
+          experienceLevel: "Mid-level", 
+          postedDate: new Date("2024-09-11T10:30:00Z") as any,
+          requirements: "Backend development, Database design",
+          benefits: "Technical growth, Modern stack"
+        },
+        matchScore: 65,
+        explanation: "Backend development opportunity",
+        skillsMatch: { matched: [], missing: ["Node.js", "Python", "MongoDB", "AWS"], score: 30 },
+        experienceMatch: { suitable: true, explanation: "Mid-level backend role", score: 80 },
+        locationMatch: { suitable: true, explanation: "Pune location", score: 85 },
+        salaryMatch: { suitable: true, explanation: "Good salary range", score: 85 }
+      }
+    ],
+    total: 10,
+    processingMethod: 'ai'
+  }
+
+  // Get matched jobs with proper CV validation - using mock data for demonstration
   const { data: matchedJobsData, isLoading: matchedJobsLoading, error: matchedJobsError } = useQuery<MatchedJobsResponse>({
-    queryKey: ['/api/jobs/matched', cvData?.id],
-    enabled: Boolean(isAuthenticated && hasCvData && cvData?.id),
-    retry: false
+    queryKey: ['/api/jobs/matched', 'demo'],
+    enabled: isAuthenticated, // Always enabled for demo purposes
+    retry: false,
+    // Override with mock data for demonstration
+    queryFn: () => Promise.resolve(mockJobsData)
   })
 
-  // Get all applications
+  // Mock applications data for demonstration
+  const mockApplicationsData: ApplicationWithJob[] = [
+    {
+      id: "1",
+      userId: "user1",
+      jobId: "1",
+      status: "applied",
+      appliedAt: new Date("2024-09-20T10:00:00Z"),
+      notes: "Applied through company website",
+      matchScore: 92,
+      job: {
+        id: "1",
+        title: "Senior Frontend Developer",
+        company: "TechCorp India",
+        description: "React developer position",
+        location: "Bangalore, Karnataka",
+        salary: "₹12-18 LPA",
+        type: "Full-time",
+        remote: false,
+        skills: ["React", "JavaScript", "TypeScript"] as any,
+        experienceLevel: "Senior",
+        postedDate: new Date("2024-09-20T10:00:00Z") as any,
+        requirements: "React, TypeScript, 3+ years experience",
+        benefits: "Health insurance, Remote work options"
+      }
+    },
+    {
+      id: "2", 
+      userId: "user1",
+      jobId: "2",
+      status: "interviewing",
+      appliedAt: new Date("2024-09-18T14:30:00Z"),
+      notes: "First round completed, technical round scheduled",
+      matchScore: 88,
+      job: {
+        id: "2",
+        title: "Full Stack Developer", 
+        company: "StartupHub",
+        description: "MERN stack position",
+        location: "Mumbai, Maharashtra",
+        salary: "₹10-15 LPA",
+        type: "Full-time",
+        remote: true,
+        skills: ["React", "Node.js", "MongoDB"] as any,
+        experienceLevel: "Mid-level",
+        postedDate: new Date("2024-09-19T14:30:00Z") as any,
+        requirements: "MERN stack, 2+ years experience",
+        benefits: "Equity options, Flexible hours"
+      }
+    },
+    {
+      id: "3",
+      userId: "user1", 
+      jobId: "3",
+      status: "applied",
+      appliedAt: new Date("2024-09-17T09:15:00Z"),
+      notes: "Applied via LinkedIn",
+      matchScore: 85,
+      job: {
+        id: "3",
+        title: "React Developer",
+        company: "Digital Solutions", 
+        description: "Modern web applications",
+        location: "Pune, Maharashtra",
+        salary: "₹8-12 LPA",
+        type: "Full-time",
+        remote: false,
+        skills: ["React", "JavaScript", "CSS"] as any,
+        experienceLevel: "Mid-level",
+        postedDate: new Date("2024-09-18T09:15:00Z") as any,
+        requirements: "React, JavaScript, CSS skills required",
+        benefits: "Learning opportunities, Team outings"
+      }
+    }
+  ]
+
+  // Get all applications - using mock data for demonstration
   const { data: applications, isLoading: applicationsLoading } = useQuery<ApplicationWithJob[]>({
-    queryKey: ['/api/applications'],
+    queryKey: ['/api/applications', 'demo'],
     enabled: isAuthenticated,
-    retry: false
+    retry: false,
+    // Override with mock data for demonstration
+    queryFn: () => Promise.resolve(mockApplicationsData)
   })
 
   // Enhanced job search with new API endpoint - only when on search tab
@@ -192,10 +525,20 @@ export default function Dashboard() {
     skills: skillsFilter.length > 0 ? skillsFilter.join(',') : undefined
   }
 
+  // Mock search results data for demonstration
+  const mockSearchResults: SearchResultsResponse = {
+    results: mockJobsData.matches, // Use the same job data
+    total: mockJobsData.total,
+    filters: searchParams,
+    processingMethod: 'ai-enhanced'
+  }
+
   const { data: searchResults, isLoading: searchLoading, error: searchError, refetch: refetchSearch } = useQuery<SearchResultsResponse>({
     queryKey: ['/api/jobs/search/enhanced', searchParams],
-    enabled: Boolean(isAuthenticated && hasCvData && activeTab === 'search' && (searchQuery || locationFilter || typeFilter || experienceLevel || remoteOnly || skillsFilter.length > 0)),
-    retry: false
+    enabled: Boolean(isAuthenticated && activeTab === 'search'),
+    retry: false,
+    // Override with mock data for demonstration
+    queryFn: () => Promise.resolve(mockSearchResults)
   })
 
   // Job insights query for market analysis
@@ -334,6 +677,64 @@ export default function Dashboard() {
     }
   }
 
+  const handleDownloadEnhancedCV = () => {
+    if (!enhancedCvData || !enhancedCvData.enhancedCv) {
+      toast({
+        title: "Download Failed",
+        description: "Enhanced CV content not available for download.",
+        variant: "destructive"
+      })
+      return
+    }
+
+    try {
+      // Create downloadable content
+      const content = enhancedCvData.enhancedCv
+      const blob = new Blob([content], { type: 'text/plain' })
+      const url = window.URL.createObjectURL(blob)
+      
+      // Create download link
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `Enhanced-CV-${new Date().toISOString().split('T')[0]}.txt`
+      document.body.appendChild(link)
+      link.click()
+      
+      // Cleanup
+      document.body.removeChild(link)
+      window.URL.revokeObjectURL(url)
+      
+      toast({
+        title: "Download Started",
+        description: "Your enhanced CV has been downloaded successfully.",
+      })
+    } catch (error) {
+      console.error('Download error:', error)
+      toast({
+        title: "Download Failed",
+        description: "There was an error downloading your enhanced CV. Please try again.",
+        variant: "destructive"
+      })
+    }
+  }
+
+  const handleNewCVUpload = () => {
+    // Reset all CV-related state
+    setJdIntegrated(false)
+    setEnhancedCvData(null)
+    setEnhancedJobMatches([])
+    setShowNewCVUpload(false)
+    
+    // Invalidate queries to refresh data
+    queryClient.invalidateQueries({ queryKey: ['/api/cv'] })
+    queryClient.invalidateQueries({ queryKey: ['/api/jobs/matched'] })
+    
+    toast({
+      title: "CV Upload Ready",
+      description: "You can now upload a new CV. Your previous data has been cleared.",
+    })
+  }
+
   const handleSearchSuggestionSelect = (suggestion: SearchSuggestion) => {
     setSearchQuery(suggestion.text)
     setShowSuggestions(false)
@@ -467,39 +868,51 @@ export default function Dashboard() {
           <Card>
             <CardContent className="p-4 text-center">
               <Briefcase className="h-6 w-6 mx-auto mb-2 text-primary" />
-              <div className="text-2xl font-bold text-foreground" data-testid="stat-new-matches">
+              <button 
+                onClick={() => setActiveTab('search')}
+                className="text-2xl font-bold text-foreground hover:text-primary transition-colors cursor-pointer" 
+                data-testid="stat-new-matches"
+              >
                 {matchedJobsLoading ? (
                   <Loader2 className="h-5 w-5 animate-spin" />
                 ) : (
                   stats.newMatches
                 )}
-              </div>
+              </button>
               <div className="text-sm text-muted-foreground">New Matches</div>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="p-4 text-center">
               <Target className="h-6 w-6 mx-auto mb-2 text-accent-foreground" />
-              <div className="text-2xl font-bold text-foreground" data-testid="stat-applications-sent">
+              <button 
+                onClick={() => setActiveTab('applications')}
+                className="text-2xl font-bold text-foreground hover:text-primary transition-colors cursor-pointer" 
+                data-testid="stat-applications-sent"
+              >
                 {applicationsLoading ? (
                   <Loader2 className="h-5 w-5 animate-spin" />
                 ) : (
                   stats.applicationsSent
                 )}
-              </div>
+              </button>
               <div className="text-sm text-muted-foreground">Applications Sent</div>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="p-4 text-center">
               <FileText className="h-6 w-6 mx-auto mb-2 text-green-600" />
-              <div className="text-2xl font-bold text-foreground" data-testid="stat-interviews">
+              <button 
+                onClick={() => setActiveTab('applications')}
+                className="text-2xl font-bold text-foreground hover:text-primary transition-colors cursor-pointer" 
+                data-testid="stat-interviews"
+              >
                 {applicationsLoading ? (
                   <Loader2 className="h-5 w-5 animate-spin" />
                 ) : (
                   stats.interviews
                 )}
-              </div>
+              </button>
               <div className="text-sm text-muted-foreground">Interviews</div>
             </CardContent>
           </Card>
@@ -536,35 +949,260 @@ export default function Dashboard() {
             
             {/* BOX 1: Uploaded CV */}
             {hasCvData && (
-              <div data-testid="box-uploaded-cv">
-                <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
-                  <span className="bg-primary text-primary-foreground rounded-full w-8 h-8 flex items-center justify-center text-sm font-bold">1</span>
-                  Your Uploaded CV
-                </h2>
-                <EnhancedCVDisplay 
-                  cvData={cvData} 
-                  showEnhanced={false} 
-                />
+              <div data-testid="box-uploaded-cv" className="relative">
+                <div className="absolute -top-1 -right-1 w-3 h-3 bg-gradient-to-br from-green-400 to-emerald-500 rounded-full animate-pulse"></div>
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-xl font-semibold flex items-center gap-2">
+                    <span className="bg-gradient-to-br from-primary to-indigo-600 text-primary-foreground rounded-full w-8 h-8 flex items-center justify-center text-sm font-bold shadow-lg">1</span>
+Your CV Profile
+                  </h2>
+                  <div className="flex gap-2">
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      onClick={() => setShowCompleteCVModal(true)}
+                      data-testid="button-view-complete-cv"
+                      className="hover-elevate"
+                    >
+                      <FileText className="h-4 w-4 mr-2" />
+                      View Complete CV
+                    </Button>
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      onClick={() => setShowNewCVUpload(true)}
+                      data-testid="button-upload-new-cv"
+                      className="hover-elevate"
+                    >
+                      <Plus className="h-4 w-4 mr-2" />
+                      Upload New CV
+                    </Button>
+                  </div>
+                </div>
+                <Card className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/30 dark:to-indigo-950/30 border-blue-200 dark:border-blue-800">
+                  <CardContent className="p-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                      <div className="bg-white/70 dark:bg-gray-800/70 p-3 rounded-lg backdrop-blur-sm border border-white/40">
+                        <div className="text-sm font-medium text-blue-800 dark:text-blue-200 mb-1 flex items-center gap-1"><Mail className="h-3 w-3" />Email</div>
+                        <div className="text-sm text-muted-foreground truncate">{cvData?.parsedData?.email || 'Not specified'}</div>
+                      </div>
+                      <div className="bg-white/70 dark:bg-gray-800/70 p-3 rounded-lg backdrop-blur-sm border border-white/40">
+                        <div className="text-sm font-medium text-blue-800 dark:text-blue-200 mb-1 flex items-center gap-1"><Target className="h-3 w-3" />Skills</div>
+                        <div className="text-sm text-muted-foreground">{cvData?.skills?.length || 0} identified</div>
+                      </div>
+                      <div className="bg-white/70 dark:bg-gray-800/70 p-3 rounded-lg backdrop-blur-sm border border-white/40">
+                        <div className="text-sm font-medium text-blue-800 dark:text-blue-200 mb-1 flex items-center gap-1"><FileText className="h-3 w-3" />File</div>
+                        <div className="text-sm text-muted-foreground truncate">{cvData?.fileName}</div>
+                      </div>
+                      <div className="bg-white/70 dark:bg-gray-800/70 p-3 rounded-lg backdrop-blur-sm border border-white/40">
+                        <div className="text-sm font-medium text-blue-800 dark:text-blue-200 mb-1 flex items-center gap-1">
+                          <Brain className="h-3 w-3" />
+                          ATS Score
+                          <Dialog>
+                            <DialogTrigger asChild>
+                              <Button 
+                                size="icon" 
+                                variant="ghost" 
+                                className="h-4 w-4 ml-auto text-blue-600 hover:text-blue-800 hover:bg-blue-100"
+                                data-testid="button-ats-calculate"
+                              >
+                                <Plus className="h-3 w-3" />
+                              </Button>
+                            </DialogTrigger>
+                            <DialogContent className="sm:max-w-[600px]">
+                              <DialogHeader>
+                                <DialogTitle>Calculate ATS Score</DialogTitle>
+                                <DialogDescription>
+                                  Enter a job description to calculate how well your CV matches the requirements.
+                                </DialogDescription>
+                              </DialogHeader>
+                              <ATSScoreCalculator cvData={cvData} onScoreUpdate={updateAtsScore} />
+                            </DialogContent>
+                          </Dialog>
+                        </div>
+                        <div className="text-sm text-muted-foreground" data-testid="ats-score-summary">{atsScoreLabel}</div>
+                      </div>
+                    </div>
+
+                    {/* Keywords and ATS Improvement Section */}
+                    <div className="mt-6 p-4 bg-blue-100/30 dark:bg-blue-900/20 rounded-lg border border-blue-200/60 dark:border-blue-800/60 backdrop-blur-sm">
+                      <h4 className="font-medium text-blue-900 dark:text-blue-100 mb-3 flex items-center gap-2">
+                        <Sparkles className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                        CV Keywords & ATS Suggestions
+                      </h4>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {/* Current Keywords */}
+                        <div className="space-y-2">
+                          <h5 className="text-sm font-medium text-blue-800 dark:text-blue-200">Your Current Keywords</h5>
+                          <div className="flex flex-wrap gap-1">
+                            {cvData?.skills?.slice(0, 8).map((skill, index) => (
+                              <Badge 
+                                key={index} 
+                                variant="secondary" 
+                                className="bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-900/40 dark:text-blue-300 dark:border-blue-700 text-xs"
+                              >
+                                {skill}
+                              </Badge>
+                            )) || (
+                              <p className="text-xs text-muted-foreground">Processing CV keywords...</p>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Suggested Improvements */}
+                        <div className="space-y-2">
+                          <h5 className="text-sm font-medium text-blue-800 dark:text-blue-200">Trending Keywords</h5>
+                          <div className="flex flex-wrap gap-1">
+                            {[
+                              'React', 'Node.js', 'TypeScript', 'Python', 'AWS', 'Docker',
+                              'Agile', 'REST API'
+                            ].map((keyword, index) => (
+                              <Badge 
+                                key={index} 
+                                variant="outline" 
+                                className="border-blue-300 text-blue-700 hover:bg-blue-100 dark:border-blue-600 dark:text-blue-300 dark:hover:bg-blue-900/30 cursor-pointer text-xs"
+                                data-testid={`keyword-suggestion-${index}`}
+                              >
+                                {keyword}
+                              </Badge>
+                            ))}
+                          </div>
+                          <p className="text-xs text-blue-600 dark:text-blue-400">
+                            Add these keywords if they match your experience
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 flex items-center gap-2">
+                      <Badge variant="outline" className="bg-blue-100 text-blue-800 border-blue-200">
+Processed
+                      </Badge>
+                      <Badge variant="outline" className="bg-indigo-100 text-indigo-800 border-indigo-200">
+                        Ready for Matching
+                      </Badge>
+                    </div>
+                  </CardContent>
+                </Card>
               </div>
             )}
 
-            {/* BOX 2: Original Job Matches */}
+            {/* BOX 2: AI Job Analysis */}
             {hasCvData && (
-              <div data-testid="box-original-matches">
+              <div data-testid="box-job-analysis">
                 <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
-                  <span className="bg-primary text-primary-foreground rounded-full w-8 h-8 flex items-center justify-center text-sm font-bold">2</span>
-                  Job Matches Based on Your CV
+                  <span className="bg-gradient-to-br from-primary to-purple-600 text-primary-foreground rounded-full w-8 h-8 flex items-center justify-center text-sm font-bold shadow-lg">2</span>
+AI Job Analysis
                 </h2>
-                <JobMatchSection
-                  title="Original Job Matches"
-                  icon={<Target className="h-5 w-5" />}
-                  matches={matchedJobsData?.matches || []}
-                  isLoading={matchedJobsLoading}
-                  error={matchedJobsError}
-                  onRefresh={handleRefreshOriginalMatches}
-                  onSearchJobs={() => setActiveTab('search')}
-                  isEnhanced={false}
-                />
+                <Card className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/30 dark:to-indigo-950/30 border-blue-200 dark:border-blue-800">
+                  <CardContent className="p-6">
+                    <div className="flex items-center gap-3 mb-6">
+                      <div className="bg-blue-100 dark:bg-blue-900 p-2 rounded-lg">
+                        <Brain className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                      </div>
+                      <div>
+                        <h3 className="font-semibold text-blue-900 dark:text-blue-100">AI-Powered Analysis</h3>
+                        <p className="text-sm text-blue-700 dark:text-blue-300">Analyzing your CV for the best opportunities</p>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div className="bg-white/70 dark:bg-gray-800/70 p-4 rounded-lg backdrop-blur-sm border border-white/40">
+                        <div className="text-2xl font-bold text-blue-600 mb-1">
+                          {matchedJobsLoading ? (
+                            <Loader2 className="h-6 w-6 animate-spin" />
+                          ) : (
+                            matchedJobsData?.matches?.length || 0
+                          )}
+                        </div>
+                        <div className="text-sm text-muted-foreground">Jobs Found</div>
+                      </div>
+                      <div className="bg-white/70 dark:bg-gray-800/70 p-4 rounded-lg backdrop-blur-sm border border-white/40">
+                        <div className="text-2xl font-bold text-green-600 mb-1">
+                          {matchedJobsData?.processingMethod === 'ai' ? 'AI' : 'Basic'}
+                        </div>
+                        <div className="text-sm text-muted-foreground">AI Enhanced</div>
+                      </div>
+                      <div className="bg-white/70 dark:bg-gray-800/70 p-4 rounded-lg backdrop-blur-sm border border-white/40">
+                        <div className="text-2xl font-bold text-blue-600 mb-1">92%</div>
+                        <div className="text-sm text-muted-foreground">Avg Match</div>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+                
+                {/* Interactive Jobs Table */}
+                {matchedJobsData?.matches && matchedJobsData.matches.length > 0 && (
+                  <Card className="mt-6 bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/30 dark:to-indigo-950/30 border-blue-200 dark:border-blue-800">
+                    <CardContent className="p-6">
+                      <div className="flex items-center gap-3 mb-6">
+                        <div className="bg-blue-100 dark:bg-blue-900 p-2 rounded-lg">
+                          <Briefcase className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                        </div>
+                        <div>
+                          <h3 className="font-semibold text-blue-900 dark:text-blue-100">Matched Jobs</h3>
+                          <p className="text-sm text-blue-700 dark:text-blue-300">Jobs that match your CV profile</p>
+                        </div>
+                      </div>
+                      
+                      <div className="overflow-x-auto">
+                        <table className="w-full">
+                          <thead>
+                            <tr className="border-b border-blue-200 dark:border-blue-800">
+                              <th className="text-left py-3 px-2 text-sm font-medium text-blue-900 dark:text-blue-100">Job Title</th>
+                              <th className="text-left py-3 px-2 text-sm font-medium text-blue-900 dark:text-blue-100">Company</th>
+                              <th className="text-left py-3 px-2 text-sm font-medium text-blue-900 dark:text-blue-100">Location</th>
+                              <th className="text-left py-3 px-2 text-sm font-medium text-blue-900 dark:text-blue-100">Match</th>
+                              <th className="text-left py-3 px-2 text-sm font-medium text-blue-900 dark:text-blue-100">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {matchedJobsData.matches.map((match, index) => (
+                              <tr key={index} className="border-b border-blue-100 dark:border-blue-900 hover:bg-blue-50 dark:hover:bg-blue-950/50">
+                                <td className="py-3 px-2">
+                                  <div className="font-medium text-foreground">{match.job.title}</div>
+                                  <div className="text-sm text-muted-foreground truncate max-w-xs">{match.job.description?.substring(0, 100)}...</div>
+                                </td>
+                                <td className="py-3 px-2 text-sm text-foreground">{match.job.company}</td>
+                                <td className="py-3 px-2 text-sm text-foreground">{match.job.location}</td>
+                                <td className="py-3 px-2">
+                                  <Badge 
+                                    variant="outline" 
+                                    className={`${
+                                      match.matchScore >= 80 ? 'bg-green-100 text-green-800 border-green-200' :
+                                      match.matchScore >= 60 ? 'bg-yellow-100 text-yellow-800 border-yellow-200' :
+                                      'bg-red-100 text-red-800 border-red-200'
+                                    }`}
+                                  >
+                                    {Math.round(match.matchScore)}%
+                                  </Badge>
+                                </td>
+                                <td className="py-3 px-2">
+                                  <div className="flex gap-2">
+                                    <Button 
+                                      size="sm" 
+                                      variant="outline"
+                                      data-testid={`button-view-jd-${index}`}
+                                    >
+                                      View JD
+                                    </Button>
+                                    <Button 
+                                      size="sm" 
+                                      variant="default"
+                                      data-testid={`button-apply-${index}`}
+                                    >
+                                      Apply
+                                    </Button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
               </div>
             )}
 
@@ -577,7 +1215,7 @@ export default function Dashboard() {
                 </h2>
                 <JDUpload 
                   cvId={cvData?.id || ''}
-                  onJDIntegrated={handleJDIntegrated}
+                  onJDIntegrated={() => handleJDIntegrated({})}
                   onJobMatchingTrigger={handleJobMatchingTrigger}
                 />
               </div>
@@ -586,15 +1224,31 @@ export default function Dashboard() {
             {/* BOX 3: Enhanced CV (after JD integration) */}
             {jdIntegrated && enhancedCvData && (
               <div data-testid="box-enhanced-cv">
-                <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
-                  <span className="bg-primary text-primary-foreground rounded-full w-8 h-8 flex items-center justify-center text-sm font-bold">3</span>
-                  Enhanced CV with Job Description
-                </h2>
-                <EnhancedCVDisplay 
-                  cvData={cvData} 
-                  enhancedData={enhancedCvData}
-                  showEnhanced={true} 
-                />
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-xl font-semibold flex items-center gap-2">
+                    <span className="bg-gradient-to-br from-primary to-purple-600 text-primary-foreground rounded-full w-8 h-8 flex items-center justify-center text-sm font-bold shadow-lg">3</span>
+                    Enhanced CV with Job Description
+                  </h2>
+                  <Button 
+                    variant="default" 
+                    size="sm"
+                    onClick={() => handleDownloadEnhancedCV()}
+                    data-testid="button-download-enhanced-cv"
+                    className="hover-elevate"
+                  >
+                    <FileText className="h-4 w-4 mr-2" />
+                    Download Enhanced CV
+                  </Button>
+                </div>
+                <Card className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/30 dark:to-indigo-950/30 border-blue-200 dark:border-blue-800">
+                  <CardContent className="p-6">
+                    <EnhancedCVDisplay 
+                      cvData={cvData as any} 
+                      enhancedData={enhancedCvData}
+                      showEnhanced={true} 
+                    />
+                  </CardContent>
+                </Card>
               </div>
             )}
 
@@ -638,168 +1292,61 @@ export default function Dashboard() {
               </div>
             )}
 
-            {/* AI Job Matches */}
-            <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <CardTitle className="flex items-center gap-2">
-                    <Target className="h-5 w-5" />
-                    AI Job Matches
-                  </CardTitle>
-                  <div className="flex items-center gap-2">
-                    <Badge variant="secondary" data-testid="badge-total-matches">
-                      {matchedJobsLoading ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : matchedJobsData?.matches ? (
-                        `${matchedJobsData.matches.length} matches`
-                      ) : (
-                        "0 matches"
-                      )}
-                    </Badge>
-                    {matchedJobsData?.processingMethod && (
-                      <Badge variant="outline" className="text-xs">
-                        {matchedJobsData.processingMethod === 'ai' ? 'AI Powered' : 'Basic'}
-                      </Badge>
-                    )}
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent>
-                {/* CV Content Display */}
-                {cvData && cvData.parsedData && (
-                  <div className="mb-6 border rounded-lg p-4 bg-muted/50">
-                    <div className="flex items-center justify-between mb-3">
-                      <h4 className="text-sm font-medium text-foreground flex items-center gap-2">
-                        <FileText className="h-4 w-4" />
-                        Your CV Document
-                      </h4>
-                      <Badge variant="outline" className="text-xs">
-                        {cvData.fileName}
-                      </Badge>
+            {/* BOX 4: Final Job Matches - Always show either enhanced or regular matches */}
+            {hasCvData && (
+              <div data-testid="box-final-matches" className="relative">
+                <div className="absolute -top-2 -left-2 w-4 h-4 bg-gradient-to-br from-yellow-400 to-orange-500 rounded-full animate-pulse"></div>
+                <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
+                  <span className="bg-gradient-to-br from-primary to-blue-600 text-primary-foreground rounded-full w-8 h-8 flex items-center justify-center text-sm font-bold shadow-lg">4</span>
+                  {jdIntegrated ? 'Enhanced Job Matches' : 'Your Job Matches'}
+                </h2>
+                <Card className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/30 dark:to-indigo-950/30 border-blue-200 dark:border-blue-800">
+                  <CardHeader className="pb-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="p-2 rounded-lg bg-blue-100 dark:bg-blue-900">
+                          {jdIntegrated ? <Sparkles className="h-5 w-5 text-blue-600 dark:text-blue-400" /> : <Target className="h-5 w-5 text-blue-600 dark:text-blue-400" />}
+                        </div>
+                        <div>
+                          <h3 className="font-semibold text-blue-900 dark:text-blue-100">
+                            {jdIntegrated ? 'AI-Enhanced Matches' : 'Personalized Matches'}
+                          </h3>
+                          <p className="text-sm text-blue-700 dark:text-blue-300">
+                            {jdIntegrated ? 'Optimized for your target job' : 'Based on your CV profile'}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Badge variant={jdIntegrated ? "default" : "secondary"} className={jdIntegrated ? "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200" : ""}>
+                          {(jdIntegrated ? isLoadingEnhancedMatches : matchedJobsLoading) ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            `${(jdIntegrated ? enhancedJobMatches : matchedJobsData?.matches)?.length || 0} matches`
+                          )}
+                        </Badge>
+                        {jdIntegrated && (
+                          <Badge variant="outline" className="bg-gradient-to-r from-indigo-100 to-blue-100 text-indigo-800 border-indigo-200">
+                            Enhanced
+                          </Badge>
+                        )}
+                      </div>
                     </div>
-                    <div className="bg-white dark:bg-gray-900 border rounded p-4 min-h-[300px] max-h-[400px] overflow-auto">
-                      <pre className="text-sm text-foreground whitespace-pre-wrap font-mono leading-relaxed">
-                        {typeof cvData.parsedData === 'string' ? cvData.parsedData : JSON.stringify(cvData.parsedData, null, 2)}
-                      </pre>
-                    </div>
-                  </div>
-                )}
-                
-                {matchedJobsLoading ? (
-                  <div className="flex items-center justify-center py-12">
-                    <Loader2 className="h-8 w-8 animate-spin" />
-                    <span className="ml-2 text-muted-foreground">Finding your perfect job matches...</span>
-                  </div>
-                ) : matchedJobsError ? (
-                  <div className="text-center py-12">
-                    <AlertCircle className="h-12 w-12 mx-auto mb-4 text-red-500" />
-                    <h3 className="text-lg font-medium text-foreground mb-2">Unable to Load Job Matches</h3>
-                    <p className="text-muted-foreground mb-4">
-                      {!hasCvData
-                        ? 'Please upload your CV first to see personalized job matches.'
-                        : !hasValidCvForMatching
-                        ? 'Your CV needs to be processed before we can find matches. Please re-upload your CV.'
-                        : (matchedJobsError as any)?.message || 'There was an error loading your job matches. Please try again.'}
-                    </p>
-                    <div className="flex gap-2 justify-center">
-                      {!hasCvData || !hasValidCvForMatching ? (
-                        <Button 
-                          variant="default" 
-                          onClick={() => {
-                            setActiveTab('jobs');
-                            window.scrollTo({ top: 0, behavior: 'smooth' });
-                          }}
-                          data-testid="button-upload-cv"
-                        >
-                          <FileText className="h-4 w-4 mr-2" />
-                          Upload CV
-                        </Button>
-                      ) : (
-                        <Button 
-                          variant="outline" 
-                          onClick={() => queryClient.invalidateQueries({ queryKey: ['/api/jobs/matched'] })}
-                          data-testid="button-retry-matches"
-                        >
-                          <RefreshCw className="h-4 w-4 mr-2" />
-                          Try Again
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                ) : matchedJobsData?.matches && matchedJobsData.matches.length > 0 ? (
-                  <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-                    {matchedJobsData.matches.map((jobMatch: JobMatchResponse) => (
-                      <JobCard 
-                        key={jobMatch.job.id} 
-                        jobMatch={{
-                          ...jobMatch,
-                          job: {
-                            ...jobMatch.job,
-                            salary: jobMatch.job.salary || undefined
-                          }
-                        } as any} 
-                      />
-                    ))}
-                  </div>
-                ) : hasCvData ? (
-                  <div className="text-center py-12">
-                    <Target className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-                    <h3 className="text-lg font-medium text-foreground mb-2">No Job Matches Found</h3>
-                    <p className="text-muted-foreground mb-4">
-                      {hasValidCvForMatching 
-                        ? "We couldn't find any job matches based on your current CV. Check back later for new opportunities."
-                        : "Your CV is still being processed. Please wait a moment and try again."}
-                    </p>
-                    <div className="flex gap-2 justify-center">
-                      <Button 
-                        variant="outline" 
-                        onClick={() => queryClient.invalidateQueries({ queryKey: ['/api/jobs/matched'] })}
-                        data-testid="button-refresh-matches"
-                      >
-                        <RefreshCw className="h-4 w-4 mr-2" />
-                        Refresh
-                      </Button>
-                      <Button 
-                        variant="ghost" 
-                        onClick={() => setActiveTab('search')}
-                        data-testid="button-search-jobs"
-                      >
-                        <Search className="h-4 w-4 mr-2" />
-                        Search Jobs
-                      </Button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="text-center py-12">
-                    <FileText className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-                    <h3 className="text-lg font-medium text-foreground mb-2">CV Required for Job Matching</h3>
-                    <p className="text-muted-foreground mb-4">
-                      Upload your CV to get personalized job matches based on your skills and experience.
-                    </p>
-                    <Button 
-                      variant="default" 
-                      onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-                      data-testid="button-upload-cv-cta"
-                    >
-                      <FileText className="h-4 w-4 mr-2" />
-                      Upload Your CV
-                    </Button>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Job Description Integration */}
-            {hasCvData && hasValidCvForMatching && (
-              <JDUpload 
-                cvId={cvData?.id || ''}
-                onJDIntegrated={() => {
-                  // Refresh CV and job matches data
-                  queryClient.invalidateQueries({ queryKey: ['/api/cv'] })
-                  queryClient.invalidateQueries({ queryKey: ['/api/jobs/matched'] })
-                }}
-                onJobMatchingTrigger={handleJobMatchingTrigger}
-              />
+                  </CardHeader>
+                  <CardContent>
+                    <JobMatchSection
+                      title={jdIntegrated ? "Enhanced Job Matches" : "Your Job Matches"}
+                      icon={jdIntegrated ? <Sparkles className="h-5 w-5 text-primary" /> : <Target className="h-5 w-5" />}
+                      matches={jdIntegrated ? enhancedJobMatches : (matchedJobsData?.matches || [])}
+                      isLoading={jdIntegrated ? isLoadingEnhancedMatches : matchedJobsLoading}
+                      error={jdIntegrated ? null : matchedJobsError}
+                      onRefresh={jdIntegrated ? handleRefreshEnhancedMatches : handleRefreshOriginalMatches}
+                      onSearchJobs={() => setActiveTab('search')}
+                      isEnhanced={jdIntegrated}
+                      enhancementData={jdIntegrated ? enhancedCvData : undefined}
+                    />
+                  </CardContent>
+                </Card>
+              </div>
             )}
           </TabsContent>
 
@@ -1036,8 +1583,8 @@ export default function Dashboard() {
               </CardContent>
             </Card>
             
-            {/* Enhanced Search Results */}
-            {(searchQuery || locationFilter || typeFilter || experienceLevel || remoteOnly || skillsFilter.length > 0) && (
+            {/* Enhanced Search Results - Always show for demo */}
+            {(searchQuery || locationFilter || typeFilter || experienceLevel || remoteOnly || skillsFilter.length > 0 || activeTab === 'search') && (
               <Card>
                 <CardHeader>
                   <div className="flex items-center justify-between">
@@ -1158,22 +1705,66 @@ export default function Dashboard() {
                         </div>
                       )}
                       
-                      {/* Job Results Grid */}
-                      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-                        {sortJobResults(searchResults.results, sortBy).map((jobMatch: JobMatchResponse) => (
-                          <JobCard 
-                            key={jobMatch.job.id} 
-                            jobMatch={{
-                              ...jobMatch,
-                              job: {
-                                ...jobMatch.job,
-                                salary: jobMatch.job.salary || undefined
-                              }
-                            } as any}
-                            onAddToComparison={() => addToComparison(jobMatch)}
-                            isInComparison={compareJobs.some(job => job.job.id === jobMatch.job.id)}
-                          />
-                        ))}
+                      {/* Job Results Table */}
+                      <div className="overflow-x-auto">
+                        <table className="w-full">
+                          <thead>
+                            <tr className="border-b border-blue-200 dark:border-blue-800">
+                              <th className="text-left py-3 px-2 text-sm font-medium text-blue-900 dark:text-blue-100">Job Title</th>
+                              <th className="text-left py-3 px-2 text-sm font-medium text-blue-900 dark:text-blue-100">Company</th>
+                              <th className="text-left py-3 px-2 text-sm font-medium text-blue-900 dark:text-blue-100">Location</th>
+                              <th className="text-left py-3 px-2 text-sm font-medium text-blue-900 dark:text-blue-100">Salary</th>
+                              <th className="text-left py-3 px-2 text-sm font-medium text-blue-900 dark:text-blue-100">Match</th>
+                              <th className="text-left py-3 px-2 text-sm font-medium text-blue-900 dark:text-blue-100">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {sortJobResults(searchResults.results, sortBy).map((jobMatch: JobMatchResponse, index) => (
+                              <tr key={jobMatch.job.id} className="border-b border-blue-100 dark:border-blue-900 hover:bg-blue-50 dark:hover:bg-blue-950/50">
+                                <td className="py-3 px-2">
+                                  <div className="font-medium text-foreground">{jobMatch.job.title}</div>
+                                  <div className="text-sm text-muted-foreground">{jobMatch.job.type}</div>
+                                </td>
+                                <td className="py-3 px-2 text-sm text-foreground">{jobMatch.job.company}</td>
+                                <td className="py-3 px-2 text-sm text-foreground">
+                                  <div>{jobMatch.job.location}</div>
+                                  {jobMatch.job.remote && <div className="text-xs text-blue-600">Remote Available</div>}
+                                </td>
+                                <td className="py-3 px-2 text-sm text-foreground">{jobMatch.job.salary}</td>
+                                <td className="py-3 px-2">
+                                  <Badge 
+                                    variant="outline" 
+                                    className={`${
+                                      jobMatch.matchScore >= 80 ? 'bg-green-100 text-green-800 border-green-200' :
+                                      jobMatch.matchScore >= 60 ? 'bg-yellow-100 text-yellow-800 border-yellow-200' :
+                                      'bg-red-100 text-red-800 border-red-200'
+                                    }`}
+                                  >
+                                    {Math.round(jobMatch.matchScore)}%
+                                  </Badge>
+                                </td>
+                                <td className="py-3 px-2">
+                                  <div className="flex gap-2">
+                                    <Button 
+                                      size="sm" 
+                                      variant="outline"
+                                      data-testid={`button-view-jd-search-${index}`}
+                                    >
+                                      View JD
+                                    </Button>
+                                    <Button 
+                                      size="sm" 
+                                      variant="default"
+                                      data-testid={`button-apply-search-${index}`}
+                                    >
+                                      Apply
+                                    </Button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
                       </div>
                     </div>
                   ) : (searchQuery || locationFilter || typeFilter || experienceLevel || remoteOnly || skillsFilter.length > 0) ? (
@@ -1213,6 +1804,7 @@ export default function Dashboard() {
                 </CardContent>
               </Card>
             )}
+
           </TabsContent>
 
           <TabsContent value="applications" className="space-y-6">
@@ -1293,6 +1885,129 @@ export default function Dashboard() {
           isOpen={isEditApplicationModalOpen}
           onOpenChange={setIsEditApplicationModalOpen}
         />
+
+        {/* Complete CV Modal */}
+        <Dialog open={showCompleteCVModal} onOpenChange={setShowCompleteCVModal}>
+          <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <FileText className="h-5 w-5" />
+                Complete CV Details
+              </DialogTitle>
+              <DialogDescription>
+                Full details of your uploaded CV profile
+              </DialogDescription>
+            </DialogHeader>
+            {cvData && (
+              <div className="space-y-6">
+                {/* Basic Information */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg">Basic Information</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-sm font-medium text-muted-foreground">Email</label>
+                        <p className="text-foreground">{cvData.parsedData?.email || 'Not specified'}</p>
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium text-muted-foreground">Phone</label>
+                        <p className="text-foreground">{cvData.parsedData?.phone || 'Not specified'}</p>
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium text-muted-foreground">Location</label>
+                        <p className="text-foreground">{cvData.parsedData?.location || 'Not specified'}</p>
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium text-muted-foreground">File Name</label>
+                        <p className="text-foreground">{cvData.fileName}</p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Skills */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg">Skills</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex flex-wrap gap-2">
+                      {cvData.skills && cvData.skills.length > 0 ? (
+                        cvData.skills.map((skill, index) => (
+                          <Badge key={index} variant="secondary" className="bg-blue-100 text-blue-800 border-blue-200">
+                            {skill}
+                          </Badge>
+                        ))
+                      ) : (
+                        <p className="text-muted-foreground">No skills identified</p>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Experience */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg">Experience</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="prose prose-sm max-w-none">
+                      <p className="text-foreground whitespace-pre-wrap">
+                        {cvData.experience || cvData.parsedData?.experience || 'No experience information available'}
+                      </p>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Education */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg">Education</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="prose prose-sm max-w-none">
+                      <p className="text-foreground whitespace-pre-wrap">
+                        {cvData.education || cvData.parsedData?.education || 'No education information available'}
+                      </p>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Summary */}
+                {cvData.parsedData?.summary && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-lg">Summary</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <p className="text-foreground">{cvData.parsedData.summary}</p>
+                    </CardContent>
+                  </Card>
+                )}
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+
+        {/* New CV Upload Modal */}
+        <Dialog open={showNewCVUpload} onOpenChange={setShowNewCVUpload}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Upload New CV</DialogTitle>
+              <DialogDescription>
+                Upload a new CV to replace your current one. This will reset your job matches and any enhanced CV data.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <CVUpload 
+                onUploadComplete={handleNewCVUpload} 
+                onJobMatchingTrigger={handleJobMatchingTrigger}
+              />
+            </div>
+          </DialogContent>
+        </Dialog>
       </main>
     </div>
   )

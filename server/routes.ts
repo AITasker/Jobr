@@ -22,7 +22,8 @@ import { ApplicationLifecycleService } from "./applicationLifecycleService";
 import { NotificationService } from "./notificationService";
 import { AnalyticsService } from "./analyticsService";
 import { PhonePeService, PHONEPE_PRICE_MAPPINGS } from "./phonepe";
-import { registerSchema, loginSchema, insertJobSchema, insertApplicationSchema, phoneRequestSchema, phoneVerifySchema, jobApplySchema, cvTailorSchema, applicationUpdateSchema, batchPrepareSchema, bookmarkJobSchema, jobSearchSchema, saveSearchSchema, updatePreferencesSchema } from "@shared/schema";
+import { ATSService } from "./atsService";
+import { registerSchema, loginSchema, insertJobSchema, insertApplicationSchema, phoneRequestSchema, phoneVerifySchema, jobApplySchema, cvTailorSchema, applicationUpdateSchema, batchPrepareSchema, bookmarkJobSchema, jobSearchSchema, saveSearchSchema, updatePreferencesSchema, atsScoreSchema } from "@shared/schema";
 import { checkDatabaseHealth } from "./db";
 import { createErrorResponse, ERROR_CODES } from "./utils/errorHandler";
 import { addAuthMetricsRoute } from "./authMetricsRoute";
@@ -3165,6 +3166,106 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error verifying payment:", error);
       res.status(500).json({ success: false, message: "Failed to verify payment" });
+    }
+  });
+
+  // ATS Score calculation endpoint for students
+  app.post('/api/ats/score', isAuthenticated, async (req: any, res: any) => {
+    try {
+      // Validate request body with Zod schema
+      const validationResult = atsScoreSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid request data",
+          errors: validationResult.error.errors
+        });
+      }
+
+      const { jobDescription, resumeText } = validationResult.data;
+
+      // Calculate ATS score using OpenAI
+      const atsResult = await ATSService.calculateATSScore(jobDescription, resumeText);
+
+      res.json({
+        success: true,
+        data: atsResult
+      });
+    } catch (error) {
+      console.error("ATS Score calculation error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Failed to calculate ATS score",
+        error: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  });
+
+  // ATS Baseline Score calculation endpoint - shows CV quality without JD
+  app.post('/api/ats/baseline', isAuthenticated, async (req: any, res: any) => {
+    try {
+      // Validate request body
+      const { resumeText } = req.body;
+      if (!resumeText || typeof resumeText !== 'string') {
+        return res.status(400).json({
+          success: false,
+          message: "Resume text is required"
+        });
+      }
+
+      // Calculate baseline score based on CV quality factors
+      const calculateBaselineScore = (cvText: string): number => {
+        let score = 40; // Base score
+        
+        // Content length factor (shows completeness)
+        const length = cvText.length;
+        if (length > 2000) score += 15;
+        else if (length > 1000) score += 10;
+        else if (length > 500) score += 5;
+        
+        // Structure factors (common CV sections)
+        const sections = [
+          /experience|work|employment/i,
+          /education|degree|university|college/i,
+          /skills|competenc|technical/i,
+          /contact|email|phone/i,
+          /project|achievement/i
+        ];
+        
+        sections.forEach(pattern => {
+          if (pattern.test(cvText)) score += 6;
+        });
+        
+        // Professional keywords bonus
+        const professionalKeywords = [
+          /management|lead|senior|junior/i,
+          /software|technical|engineer|developer/i,
+          /project|team|collaboration/i,
+          /certification|qualified|trained/i
+        ];
+        
+        professionalKeywords.forEach(pattern => {
+          if (pattern.test(cvText)) score += 3;
+        });
+        
+        return Math.min(Math.max(score, 30), 85); // Keep in reasonable range
+      };
+
+      const baselineScore = calculateBaselineScore(resumeText);
+
+      res.json({
+        success: true,
+        data: {
+          baseline_score: baselineScore,
+          explanation: `Baseline CV score of ${baselineScore}% based on content completeness, structure, and professional keywords. Add a job description to see detailed matching analysis.`
+        }
+      });
+    } catch (error) {
+      console.error("Baseline score calculation error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Failed to calculate baseline score"
+      });
     }
   });
 
