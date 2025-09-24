@@ -153,6 +153,7 @@ export default function Dashboard() {
   const [enhancedJobMatches, setEnhancedJobMatches] = useState<JobMatchResponse[]>([])
   const [isLoadingEnhancedMatches, setIsLoadingEnhancedMatches] = useState(false)
   const [showNewCVUpload, setShowNewCVUpload] = useState(false)
+  const [showCompleteCVModal, setShowCompleteCVModal] = useState(false)
 
   // All queries must be called before any conditional logic
   const { data: cvData, isLoading: cvLoading, error: cvError } = useQuery<CVResponse | null>({
@@ -603,16 +604,28 @@ export default function Dashboard() {
                     <span className="bg-gradient-to-br from-primary to-indigo-600 text-primary-foreground rounded-full w-8 h-8 flex items-center justify-center text-sm font-bold shadow-lg">1</span>
 Your CV Profile
                   </h2>
-                  <Button 
-                    variant="outline" 
-                    size="sm"
-                    onClick={() => setShowNewCVUpload(true)}
-                    data-testid="button-upload-new-cv"
-                    className="hover-elevate"
-                  >
-                    <Plus className="h-4 w-4 mr-2" />
-                    Upload New CV
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      onClick={() => setShowCompleteCVModal(true)}
+                      data-testid="button-view-complete-cv"
+                      className="hover-elevate"
+                    >
+                      <FileText className="h-4 w-4 mr-2" />
+                      View Complete CV
+                    </Button>
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      onClick={() => setShowNewCVUpload(true)}
+                      data-testid="button-upload-new-cv"
+                      className="hover-elevate"
+                    >
+                      <Plus className="h-4 w-4 mr-2" />
+                      Upload New CV
+                    </Button>
+                  </div>
                 </div>
                 <Card className="bg-gradient-to-br from-green-50 to-teal-50 dark:from-green-950/30 dark:to-teal-950/30 border-green-200 dark:border-green-800">
                   <CardContent className="p-4">
@@ -685,6 +698,79 @@ AI Job Analysis
                     </div>
                   </CardContent>
                 </Card>
+                
+                {/* Interactive Jobs Table */}
+                {matchedJobsData?.matches && matchedJobsData.matches.length > 0 && (
+                  <Card className="mt-6 bg-gradient-to-br from-blue-50 to-cyan-50 dark:from-blue-950/30 dark:to-cyan-950/30 border-blue-200 dark:border-blue-800">
+                    <CardContent className="p-6">
+                      <div className="flex items-center gap-3 mb-6">
+                        <div className="bg-blue-100 dark:bg-blue-900 p-2 rounded-lg">
+                          <Briefcase className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                        </div>
+                        <div>
+                          <h3 className="font-semibold text-blue-900 dark:text-blue-100">Matched Jobs</h3>
+                          <p className="text-sm text-blue-700 dark:text-blue-300">Jobs that match your CV profile</p>
+                        </div>
+                      </div>
+                      
+                      <div className="overflow-x-auto">
+                        <table className="w-full">
+                          <thead>
+                            <tr className="border-b border-blue-200 dark:border-blue-800">
+                              <th className="text-left py-3 px-2 text-sm font-medium text-blue-900 dark:text-blue-100">Job Title</th>
+                              <th className="text-left py-3 px-2 text-sm font-medium text-blue-900 dark:text-blue-100">Company</th>
+                              <th className="text-left py-3 px-2 text-sm font-medium text-blue-900 dark:text-blue-100">Location</th>
+                              <th className="text-left py-3 px-2 text-sm font-medium text-blue-900 dark:text-blue-100">Match</th>
+                              <th className="text-left py-3 px-2 text-sm font-medium text-blue-900 dark:text-blue-100">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {matchedJobsData.matches.map((match, index) => (
+                              <tr key={index} className="border-b border-blue-100 dark:border-blue-900 hover:bg-blue-50 dark:hover:bg-blue-950/50">
+                                <td className="py-3 px-2">
+                                  <div className="font-medium text-foreground">{match.job.title}</div>
+                                  <div className="text-sm text-muted-foreground truncate max-w-xs">{match.job.description?.substring(0, 100)}...</div>
+                                </td>
+                                <td className="py-3 px-2 text-sm text-foreground">{match.job.company}</td>
+                                <td className="py-3 px-2 text-sm text-foreground">{match.job.location}</td>
+                                <td className="py-3 px-2">
+                                  <Badge 
+                                    variant="outline" 
+                                    className={`${
+                                      match.matchScore >= 80 ? 'bg-green-100 text-green-800 border-green-200' :
+                                      match.matchScore >= 60 ? 'bg-yellow-100 text-yellow-800 border-yellow-200' :
+                                      'bg-red-100 text-red-800 border-red-200'
+                                    }`}
+                                  >
+                                    {Math.round(match.matchScore)}%
+                                  </Badge>
+                                </td>
+                                <td className="py-3 px-2">
+                                  <div className="flex gap-2">
+                                    <Button 
+                                      size="sm" 
+                                      variant="outline"
+                                      data-testid={`button-view-jd-${index}`}
+                                    >
+                                      View JD
+                                    </Button>
+                                    <Button 
+                                      size="sm" 
+                                      variant="default"
+                                      data-testid={`button-apply-${index}`}
+                                    >
+                                      Apply
+                                    </Button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
               </div>
             )}
 
@@ -697,7 +783,7 @@ AI Job Analysis
                 </h2>
                 <JDUpload 
                   cvId={cvData?.id || ''}
-                  onJDIntegrated={handleJDIntegrated}
+                  onJDIntegrated={() => handleJDIntegrated({})}
                   onJobMatchingTrigger={handleJobMatchingTrigger}
                 />
               </div>
@@ -1317,6 +1403,111 @@ AI Job Analysis
           isOpen={isEditApplicationModalOpen}
           onOpenChange={setIsEditApplicationModalOpen}
         />
+
+        {/* Complete CV Modal */}
+        <Dialog open={showCompleteCVModal} onOpenChange={setShowCompleteCVModal}>
+          <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <FileText className="h-5 w-5" />
+                Complete CV Details
+              </DialogTitle>
+              <DialogDescription>
+                Full details of your uploaded CV profile
+              </DialogDescription>
+            </DialogHeader>
+            {cvData && (
+              <div className="space-y-6">
+                {/* Basic Information */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg">Basic Information</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-sm font-medium text-muted-foreground">Email</label>
+                        <p className="text-foreground">{cvData.parsedData?.email || 'Not specified'}</p>
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium text-muted-foreground">Phone</label>
+                        <p className="text-foreground">{cvData.parsedData?.phone || 'Not specified'}</p>
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium text-muted-foreground">Location</label>
+                        <p className="text-foreground">{cvData.parsedData?.location || 'Not specified'}</p>
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium text-muted-foreground">File Name</label>
+                        <p className="text-foreground">{cvData.fileName}</p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Skills */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg">Skills</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex flex-wrap gap-2">
+                      {cvData.skills && cvData.skills.length > 0 ? (
+                        cvData.skills.map((skill, index) => (
+                          <Badge key={index} variant="secondary" className="bg-blue-100 text-blue-800 border-blue-200">
+                            {skill}
+                          </Badge>
+                        ))
+                      ) : (
+                        <p className="text-muted-foreground">No skills identified</p>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Experience */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg">Experience</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="prose prose-sm max-w-none">
+                      <p className="text-foreground whitespace-pre-wrap">
+                        {cvData.experience || cvData.parsedData?.experience || 'No experience information available'}
+                      </p>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Education */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg">Education</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="prose prose-sm max-w-none">
+                      <p className="text-foreground whitespace-pre-wrap">
+                        {cvData.education || cvData.parsedData?.education || 'No education information available'}
+                      </p>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Summary */}
+                {cvData.parsedData?.summary && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-lg">Summary</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <p className="text-foreground">{cvData.parsedData.summary}</p>
+                    </CardContent>
+                  </Card>
+                )}
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
 
         {/* New CV Upload Modal */}
         <Dialog open={showNewCVUpload} onOpenChange={setShowNewCVUpload}>
